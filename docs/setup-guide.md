@@ -14,6 +14,8 @@
 
 ## 현재 저장소를 실행하는 팀원 안내
 
+공통 환경 후속 반영 2026-10-29: JPA 설정은 공통 properties로 통일했고 CI도 이를 재사용한다. 개인 DB 파일 import는 application-default.properties로 옮겼으며 test 프로필은 TEST_DB_* 전용이다. 루트 .gitignore도 추가했다. 아래 초기 검토 표의 빌드·DB 상태와 구분하며, 테스트 전용 계정 준비와 실행은 [테스트 DB 안내](test-database.md)를 따른다.
+
 2026-10-29 파일 검토 기준으로 프로젝트는 이미 생성되어 있다. 실제 경로는 `LancerPick/`과 `LancerPickFrontend/`이고, 기본 Java 패키지는 `com.example.lancerpick`이다. 신규 팀원은 [루트 README](../README.md)의 복제 후 실행 절차를 우선 따른다. 아래 프로젝트 생성 절차를 기존 저장소에 다시 실행하지 않는다.
 
 현재 로컬 DB 접속은 각자의 MySQL과 `LancerPick/local-application.properties`를 사용한다. 이 개인 파일은 검토하지 않았으며 실제 접속 성공 여부도 확인하지 않았다. 루트 `compose.yaml`·`.env.example`과 Docker 배포 구성은 아직 없다. 아래 Docker DB 및 YAML 설정은 선택적인 신규 구축 예시이며 현재 적용 상태가 아니다. 기존 `application.properties`에 YAML 예시를 중복 추가하지 않는다. CI 구성은 이미 `.github/workflows/ci.yml`에 있으므로 새로 만드는 대신 내용을 검토·수정한다.

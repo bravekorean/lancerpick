@@ -116,7 +116,9 @@ npm.cmd run build
 .\gradlew.bat clean build
 ```
 
-현재 백엔드의 `@SpringBootTest`는 애플리케이션과 DB 설정을 사용합니다. 로컬 MySQL과 접속 정보를 준비한 뒤 실행합니다. 테스트용 DB 격리는 후속 작업입니다. 프런트 타입 검사·빌드·린트는 초기 구성 시 통과했으며, 백엔드 빌드·DB 연결·인증 검증은 아직 완료로 기록하지 않았습니다.
+백엔드 통합 테스트는 `@IntegrationTest`와 `test` 프로필을 사용합니다. 개발용 개인 접속 파일을 읽지 않고 `TEST_DB_URL`, `TEST_DB_USERNAME`, `TEST_DB_PASSWORD`로 테스트 전용 MySQL에 접속합니다. 테스트 전용 DB·계정 준비와 PowerShell 실행 방법은 [테스트 DB 안내](docs/test-database.md)를 따릅니다. 테스트용 URL을 생략하면 `localhost:3306/lancerpick_test`를 사용하며 계정·비밀번호는 반드시 별도로 지정합니다. 일반 실행의 `DB_*`로 대체하지 않습니다.
+
+공통 JPA 설정은 OSIV 비활성화, 스키마 검증(`validate`), JDBC 시각 UTC입니다. Flyway는 활성화하며 테이블은 SQL로 관리합니다. 아직 업무 엔티티·마이그레이션·인증 구현 완료를 의미하지 않습니다.
 
 ## GitHub Actions CI
 
@@ -127,7 +129,7 @@ npm.cmd run build
 | Frontend checks | 고정 Node 버전, npm ci, 타입 검사, 린트, 빌드 |
 | Backend checks | JDK 25, 임시 MySQL 8.4, Gradle 빌드·테스트, JPA 스키마 검증 |
 
-CI는 실행마다 `lancerpick_ci` DB를 만들고 종료 시 폐기합니다. 워크플로의 `ci_only_*` 값은 격리된 테스트 전용 값이며 실제 접속 정보가 아닙니다. 개인 설정 파일이나 로컬 DB를 사용하지 않고 별도 Secrets 등록도 필요하지 않습니다. JDBC의 공개키 조회 허용·TLS 비활성화 옵션은 CI 임시 DB 전용입니다.
+CI는 실행마다 `lancerpick_ci` DB를 만들고 종료 시 폐기합니다. 워크플로는 `TEST_DB_*`를 전달하며 JPA 설정은 백엔드 공통 파일을 사용합니다. 워크플로의 `ci_only_*` 값은 격리된 테스트 전용 값이며 실제 접속 정보가 아닙니다. 개인 설정 파일이나 로컬 DB를 사용하지 않고 별도 Secrets 등록도 필요하지 않습니다. JDBC의 공개키 조회 허용·TLS 비활성화 옵션은 CI 임시 DB 전용입니다.
 
 테이블을 추가할 때는 엔티티와 Flyway SQL을 함께 반영해야 합니다. CI는 테스트를 생략하거나 스키마를 자동 생성해 검사를 우회하지 않습니다. 현재 프런트 자동 테스트 스크립트는 없으므로 타입·린트·빌드를 검사하고, 기능 테스트가 생기면 해당 명령을 추가합니다.
 

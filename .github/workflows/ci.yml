@@ -73,12 +73,9 @@ jobs:
           --health-retries=12
           --health-start-period=30s
     env:
-      DB_URL: jdbc:mysql://127.0.0.1:3306/lancerpick_ci?connectionTimeZone=UTC&allowPublicKeyRetrieval=true&sslMode=DISABLED
-      DB_USERNAME: lancerpick_ci
-      DB_PASSWORD: ci_only_password
-      SPRING_JPA_OPEN_IN_VIEW: 'false'
-      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
-      SPRING_JPA_PROPERTIES_HIBERNATE_JDBC_TIME_ZONE: UTC
+      TEST_DB_URL: jdbc:mysql://127.0.0.1:3306/lancerpick_ci?connectionTimeZone=UTC&allowPublicKeyRetrieval=true&sslMode=DISABLED
+      TEST_DB_USERNAME: lancerpick_ci
+      TEST_DB_PASSWORD: ci_only_password
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

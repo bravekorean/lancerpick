@@ -1,0 +1,28 @@
+# Personal IDE settings at any project level
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# Local credentials and environment files
+.env
+.env.*
+!.env.example
+local-application.properties
+local-test.properties
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Build output and caches
+.gradle/
+.gradle-user-home/
+node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+
+# Gradle Wrapper and npm lockfiles remain versioned.

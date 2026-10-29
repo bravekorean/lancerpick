@@ -1,9 +1,9 @@
 package com.example.lancerpick;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import com.example.lancerpick.support.IntegrationTest;
 
-@SpringBootTest
+@IntegrationTest
 class LancerPickApplicationTests {
 
     @Test

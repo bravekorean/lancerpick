@@ -63,7 +63,7 @@ order/
 Copy-Item local-application.properties.example local-application.properties
 ```
 
-공통 `src/main/resources/application.properties`는 `${DB_URL}` 등의 참조와 개인 파일 import만 포함합니다. 개인 파일은 resources 밖에 두므로 기본 JAR 패키징에 포함되지 않습니다. IDE의 Working directory는 백엔드 루트로 설정합니다. 배포·CI에서는 같은 이름의 환경변수로 값을 제공할 수 있습니다. 개인 파일이 없어도 import 자체는 허용되지만, 앱 실행에는 세 DB 값이 필요합니다.
+공통 `src/main/resources/application.properties`에는 `${DB_URL}` 등의 참조와 JPA·Flyway 기준이 있습니다. OSIV는 비활성화하고 스키마는 `validate`, JDBC 시각은 UTC로 설정합니다. 개인 접속 파일 import는 `application-default.properties`에서 관리하므로 활성 프로필이 없는 일반 로컬 실행에서만 적용됩니다. 개인 파일은 resources 밖에 두므로 기본 JAR 패키징에 포함되지 않습니다. IDE의 Working directory는 백엔드 루트로 설정합니다. 배포에서는 `DB_*` 환경변수를 제공하며 별도 프로필 사용 시 개인 파일을 자동으로 읽지 않습니다.
 
 현재 패키지 생성은 DB 스키마·인증·API·동시성 테스트가 완료됐다는 의미가 아닙니다. 실행 환경은 팀의 공통 개발 환경 구축 가이드를 따릅니다.
 
@@ -79,4 +79,4 @@ java -version
 
 Java와 Gradle JVM은 25를 사용합니다. 백엔드는 기본 8080 포트에서 실행하며 종료는 Ctrl+C입니다. IntelliJ 실행 시에도 Working directory를 이 폴더로 지정합니다.
 
-빌드·테스트는 DB가 준비된 상태에서 `.\gradlew.bat clean build`로 실행합니다. 현재 DB 연결·빌드·인증의 실제 검증 완료를 의미하지 않습니다. 프런트와 함께 실행하는 순서와 오류 해결은 [저장소 실행 안내](../README.md)를 참고합니다.
+빌드·테스트는 테스트 전용 DB가 준비된 상태에서 `.\gradlew.bat clean build`로 실행합니다. Spring 통합 테스트에는 `support.IntegrationTest`를 사용합니다. 이 어노테이션이 `test` 프로필과 접속 전 DB 이름 검사를 적용합니다. 테스트는 `TEST_DB_*`만 사용하며 개발용 개인 파일을 읽지 않습니다. [테스트 DB 안내](../docs/test-database.md)에 따라 별도 계정·DB를 준비합니다. 업무 기능·인증의 실제 검증 완료를 의미하지 않습니다. 프런트와 함께 실행하는 순서와 오류 해결은 [저장소 실행 안내](../README.md)를 참고합니다.
