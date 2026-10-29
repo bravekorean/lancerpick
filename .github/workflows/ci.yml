@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: LancerPickFrontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: LancerPickFrontend/.nvmrc
+          cache: npm
+          cache-dependency-path: LancerPickFrontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check TypeScript
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: LancerPick
+    services:
+      # This database and its credentials exist only for this CI job.
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: lancerpick_ci
+          MYSQL_USER: lancerpick_ci
+          MYSQL_PASSWORD: ci_only_password
+          MYSQL_ROOT_PASSWORD: ci_only_root_password
+          TZ: UTC
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -pci_only_root_password --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+          --health-start-period=30s
+    env:
+      DB_URL: jdbc:mysql://127.0.0.1:3306/lancerpick_ci?connectionTimeZone=UTC&allowPublicKeyRetrieval=true&sslMode=DISABLED
+      DB_USERNAME: lancerpick_ci
+      DB_PASSWORD: ci_only_password
+      SPRING_JPA_OPEN_IN_VIEW: 'false'
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_JPA_PROPERTIES_HIBERNATE_JDBC_TIME_ZONE: UTC
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+          cache-dependency-path: |
+            LancerPick/*.gradle
+            LancerPick/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Allow Gradle Wrapper execution
+        run: chmod +x gradlew
+
+      - name: Build and test
+        run: ./gradlew clean build --no-daemon

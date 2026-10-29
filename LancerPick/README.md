@@ -1,0 +1,82 @@
+# 랜서픽 백엔드
+
+Java 25 / Spring Boot 4.1.2 기반 백엔드입니다. 기능별 패키지 구조를 준비한 단계이며 업무 기능과 인증은 아직 구현하지 않았습니다.
+
+## 패키지 구조
+
+기본 패키지는 `com.example.lancerpick`입니다.
+
+```text
+com.example.lancerpick/
+  LancerPickApplication.java
+  auth/           # 로그인·로그아웃·CSRF 조회
+  member/         # 가입·내 정보·표시 이름 수정
+  seller/         # 판매자 프로필
+  product/        # 상품·카테고리·검색·판매 상태
+  order/          # 주문·납품·수정·취소 요청·구매 확정·이력
+  wallet/         # 구매 적립금 잔액·변동 내역·초기 지급
+  payment/        # 주문 결제·전액 환불
+  settlement/     # 수수료·판매 수익 계산·조회
+  review/         # 후기 작성·조회
+  admin/          # 관리자 상품 조회·숨김·복구·운영 이력
+  common/
+    config/       # 애플리케이션 공통 설정
+    security/     # Security 설정·인증 사용자·공통 접근 제어
+    exception/    # 공통 예외·오류 응답 처리
+```
+
+각 기능에 아래 패키지를 두었습니다. `.gitkeep`은 빈 폴더를 Git에 보존하는 파일이며 Java 코드는 아닙니다. 실제 구현 파일이 생기면 해당 폴더의 `.gitkeep`을 제거할 수 있습니다. 모든 계층에 클래스를 만들어야 한다는 뜻은 아닙니다.
+
+```text
+order/
+  controller/     # HTTP 요청·입력 검증·응답
+  dto/            # API 요청·응답 객체
+  entity/         # 해당 기능의 영속 엔티티
+  repository/     # JPA 저장·조회·잠금 및 QueryDSL 조회 구현
+  service/        # 권한·상태·업무 규칙·트랜잭션
+```
+
+## 경계와 협업
+
+- A 영역: auth·member·admin, common/security 등 필요한 공통 처리
+- B 영역: seller·product·review
+- C 영역: order
+- D 영역: wallet·payment·settlement
+- 실제 담당자와 조장은 별도 작업표에서 배정합니다.
+- Member 엔티티는 member/entity에 둡니다. auth에서 동일한 회원 엔티티를 다시 만들지 않습니다.
+- Category는 product, 납품·수정·취소 요청·주문 이력은 order에 둡니다.
+- 관리자 상품 운영 이력은 admin에서 관리하며 상품 엔티티를 중복 정의하지 않습니다.
+- 기능 간 협력은 내부 서비스 호출로 연결합니다. 업무 시작 서비스가 전체 트랜잭션을 관리하고 내부 DB 변경은 같은 트랜잭션에 참여합니다.
+- 결제·환불·구매 확정의 호출 경계는 C·D가 함께 설계합니다. 주문 → 구매자 지갑 잠금 순서를 유지합니다.
+- 엔티티를 API 응답으로 직접 반환하지 않습니다. 기능별 DTO로 변환합니다.
+- 기능 전용 규칙은 각 기능에 두고 실제 공통 정책만 common으로 옮깁니다.
+
+## 개발 환경
+
+프로젝트의 Gradle Wrapper와 JDK 25를 사용합니다. 개인 DB 접속 정보는 Git에 포함하지 않습니다. 프런트 개발 서버의 `/api` 프록시는 `http://localhost:8080`을 대상으로 합니다.
+
+### 개인 DB 설정
+
+백엔드 루트(`build.gradle`이 있는 폴더)의 `local-application.properties`에 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` 값을 작성합니다. 이 파일은 Git에서 제외합니다. 신규 팀원은 루트에서 아래 명령을 한 번 실행한 뒤 자신의 접속 정보로 수정합니다. 기존 개인 파일이 있으면 덮어쓰지 않습니다.
+
+```powershell
+Copy-Item local-application.properties.example local-application.properties
+```
+
+공통 `src/main/resources/application.properties`는 `${DB_URL}` 등의 참조와 개인 파일 import만 포함합니다. 개인 파일은 resources 밖에 두므로 기본 JAR 패키징에 포함되지 않습니다. IDE의 Working directory는 백엔드 루트로 설정합니다. 배포·CI에서는 같은 이름의 환경변수로 값을 제공할 수 있습니다. 개인 파일이 없어도 import 자체는 허용되지만, 앱 실행에는 세 DB 값이 필요합니다.
+
+현재 패키지 생성은 DB 스키마·인증·API·동시성 테스트가 완료됐다는 의미가 아닙니다. 실행 환경은 팀의 공통 개발 환경 구축 가이드를 따릅니다.
+
+## 실행
+
+로컬 MySQL을 실행하고 개인 접속 정보를 작성한 뒤, 이 폴더에서 실행합니다.
+
+```powershell
+java -version
+.\gradlew.bat --version
+.\gradlew.bat bootRun
+```
+
+Java와 Gradle JVM은 25를 사용합니다. 백엔드는 기본 8080 포트에서 실행하며 종료는 Ctrl+C입니다. IntelliJ 실행 시에도 Working directory를 이 폴더로 지정합니다.
+
+빌드·테스트는 DB가 준비된 상태에서 `.\gradlew.bat clean build`로 실행합니다. 현재 DB 연결·빌드·인증의 실제 검증 완료를 의미하지 않습니다. 프런트와 함께 실행하는 순서와 오류 해결은 [저장소 실행 안내](../README.md)를 참고합니다.
