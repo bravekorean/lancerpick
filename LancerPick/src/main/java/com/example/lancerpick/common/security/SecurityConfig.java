@@ -1,0 +1,45 @@
+package com.example.lancerpick.common.security;
+
+import jakarta.servlet.DispatcherType;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CsrfException;
+
+/** 인증 구현을 위한 기본 정책. 회원 조회·로그인 필터·인코더는 인증 담당자가 이어서 구현한다. */
+@Configuration
+public class SecurityConfig {
+    @Bean
+    SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityErrorWriter errors,
+            Environment environment) throws Exception {
+        http.formLogin(AbstractHttpConfigurer::disable)
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .logout(AbstractHttpConfigurer::disable)
+                .requestCache(AbstractHttpConfigurer::disable)
+                // 세션 기반 기본 CSRF 보호를 유지한다. /api/auth/csrf에서 토큰을 받아 헤더로 보낸다.
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint((request, response, exception) ->
+                                errors.write(request, response, 401, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다."))
+                        .accessDeniedHandler((request, response, exception) -> errors.write(request, response, 403,
+                                exception instanceof CsrfException ? "CSRF_INVALID" : "FORBIDDEN",
+                                exception instanceof CsrfException ? "요청 인증 정보를 갱신해 주세요." : "접근 권한이 없습니다.")))
+                .authorizeHttpRequests(auth -> {
+                    auth.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll();
+                    auth.requestMatchers(HttpMethod.GET, "/api/auth/csrf", "/api/categories", "/api/products", "/api/products/*", "/api/products/*/reviews", "/api/sellers/*").permitAll();
+                    // 기본 로컬 실행에도 메인 예시 조회를 제공한다. 보호 API의 인증 규칙은 유지한다.
+                    if (environment.acceptsProfiles(Profiles.of("(default | demo) & !prod"))) {
+                        auth.requestMatchers(HttpMethod.GET, "/api/demo/**").permitAll();
+                    }
+                    // 이 경로를 여는 것은 로그인/가입 구현을 대신하지 않는다. CSRF는 적용된다.
+                    auth.requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/members").permitAll();
+                    auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
+                    auth.anyRequest().authenticated();
+                });
+        return http.build();
+    }
+}

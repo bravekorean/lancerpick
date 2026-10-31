@@ -26,3 +26,4 @@ dist/
 Thumbs.db
 
 # Gradle Wrapper and npm lockfiles remain versioned.
+docs/git-commands.txt
