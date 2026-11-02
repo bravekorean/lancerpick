@@ -8,6 +8,7 @@
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:api": "node --test tests/api-client.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

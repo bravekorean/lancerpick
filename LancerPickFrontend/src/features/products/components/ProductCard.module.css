@@ -1,0 +1,20 @@
+.card { display: block; text-align: left; width: 100%; padding: 0; overflow: hidden; color: var(--ink); background: white; border: 1px solid var(--line); border-radius: 13px; cursor: pointer; transition: transform .2s, border-color .2s; }
+.card:hover { transform: translateY(-4px); border-color: #999; }
+.art { position: relative; height: 174px; overflow: hidden; background: #f0f0ee; padding: 18px; }
+.category { font-size: 11px; letter-spacing: .04em; color: #555; }
+.artFrame { position: absolute; display: grid; place-items: center; width: 104px; height: 104px; border: 1px solid #bdbdbb; border-radius: 22px; left: calc(50% - 52px); top: 27px; transform: rotate(-9deg); background: linear-gradient(135deg, white, #dededb); box-shadow: 10px 10px 0 #d8d8d5; }
+.artWord { position: absolute; bottom: 13px; font-size: 10px; letter-spacing: .18em; color: #777; }
+.body { padding: 18px; }
+.seller { font-size: 12px; color: var(--muted); }
+.body h3 { font-size: 16px; font-weight: 650; line-height: 1.65; margin: 7px 0 22px; min-height: 53px; word-break: keep-all; }
+.bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.bottom span { font-size: 11px; color: var(--muted); }
+.bottom strong { font-size: 19px; letter-spacing: -.04em; }
+.bottom strong, .bottom span { white-space: nowrap; }
+@media (max-width: 720px) {
+  .body { padding: 14px; }
+  .body h3 { font-size: 14px; min-height: 70px; }
+  .bottom { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .bottom strong { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } .card:hover { transform: none; } }
