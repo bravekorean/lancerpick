@@ -4,6 +4,7 @@ import com.example.lancerpick.product.service.CategoryService;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.example.lancerpick.member.service.MemberService;
 import com.example.lancerpick.wallet.service.WalletInitializationService;
 import com.example.lancerpick.wallet.service.WalletQueryService;
 import com.example.lancerpick.order.service.OrderCreationService;
@@ -44,4 +45,9 @@ class DefaultCatalogApiTests extends CommonApiTests {
 
     @MockitoBean
     TopupApprovalTransactions topupApprovalTransactions;
+
+    // 회원가입 서비스도 DB(MemberRepository)를 사용하므로 이 컨텍스트에서는 대체한다.
+    // 실제 회원가입 처리는 MySQL을 사용하는 별도 검증에서 확인한다.
+    @MockitoBean
+    MemberService memberService;
 }
