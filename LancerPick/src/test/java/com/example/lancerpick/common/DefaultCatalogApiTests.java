@@ -5,6 +5,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.example.lancerpick.wallet.service.WalletInitializationService;
 import com.example.lancerpick.wallet.service.WalletQueryService;
+import com.example.lancerpick.order.service.OrderCreationService;
+import com.example.lancerpick.order.repository.OrderCreationQueries;
 import com.example.lancerpick.wallet.service.WalletTopupService;
 import com.example.lancerpick.wallet.service.TopupApprovalTransactions;
 
@@ -26,6 +28,12 @@ class DefaultCatalogApiTests extends CommonApiTests {
 
     @MockitoBean
     WalletQueryService walletQueryService;
+
+    @MockitoBean
+    OrderCreationService orderCreationService;
+
+    @MockitoBean
+    OrderCreationQueries orderCreationQueries;
 
     @MockitoBean
     WalletTopupService walletTopupService;
