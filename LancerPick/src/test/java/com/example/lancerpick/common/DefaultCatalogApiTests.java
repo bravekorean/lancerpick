@@ -1,5 +1,6 @@
 package com.example.lancerpick.common;
 
+import com.example.lancerpick.product.service.CategoryService;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -21,6 +22,9 @@ import com.example.lancerpick.wallet.service.TopupApprovalTransactions;
                 + "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration"
 })
 class DefaultCatalogApiTests extends CommonApiTests {
+    // DB 없는 공통 HTTP 검사에서는 실제 카테고리 DB 조회를 사용하지 않는다.
+    @MockitoBean
+    private CategoryService categoryService;
     // 이 컨텍스트는 DB 없는 HTTP 검사다. DB를 사용하는 내부 서비스만 대체한다.
     // 실제 지갑 처리는 별도 MySQL 통합 테스트에서 검증한다.
     @MockitoBean
