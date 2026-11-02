@@ -1,6 +1,6 @@
 # 랜서픽 백엔드
 
-Java 25 / Spring Boot 4.1.2 기반 백엔드입니다. 공통 HTTP·Security·문자열·시간 처리와 메모리 예시 상품 조회가 구현되어 있습니다. 실제 회원 인증·업무 엔티티·Repository·주문·결제는 아직 미구현입니다. 공통 코드는 [백엔드 기능 개발 가이드](../docs/backend-common-guide.md)를 따라 재사용합니다.
+Java 25 / Spring Boot 4.1.2 기반 백엔드입니다. 공통 기반·메모리 예시 상품 조회·지갑 최초 지급과 잔액/내역 조회 서비스·보호 Controller가 구현되어 있습니다. 인증 principal의 회원 ID 계약과 React 마이페이지도 준비했습니다. 실제 로그인·회원가입 호출부·프런트 인증 상태 연결, 다른 업무 엔티티·주문·결제는 별도 작업입니다. 공통 코드는 [백엔드 기능 개발 가이드](../docs/backend-common-guide.md)를 따라 재사용하고, 지갑 연결은 [초기 지급 계약](../docs/wallet-initialization.md)·[조회 연결 계약](../docs/wallet-query.md)을 참고합니다.
 
 ## 패키지 구조
 
