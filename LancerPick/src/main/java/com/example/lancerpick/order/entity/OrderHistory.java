@@ -86,6 +86,12 @@ public class OrderHistory {
         return decision(orderId, sellerId, at, OrderHistoryAction.ACCEPTED, OrderStatus.AWAITING_PAYMENT, null);
     }
 
+    public static OrderHistory paid(Long orderId, Long buyerId, LocalDateTime at) {
+        var history = decision(orderId, buyerId, at, OrderHistoryAction.PAID, OrderStatus.IN_PROGRESS, null);
+        history.fromStatus = OrderStatus.AWAITING_PAYMENT;
+        return history;
+    }
+
     public static OrderHistory delivered(Long orderId, Long sellerId, OrderStatus from, LocalDateTime at) {
         if (from != OrderStatus.IN_PROGRESS && from != OrderStatus.REVISION_IN_PROGRESS) throw invalidInput("납품 이전 상태가 올바르지 않습니다.");
         OrderHistory history = decision(orderId, sellerId, at, OrderHistoryAction.DELIVERED, OrderStatus.AWAITING_CONFIRMATION, null);

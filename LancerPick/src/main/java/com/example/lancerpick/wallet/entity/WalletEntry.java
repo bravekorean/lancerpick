@@ -74,6 +74,18 @@ public class WalletEntry {
     }
 
     public Long getId() { return id; }
+    public static WalletEntry payment(long memberId, long paymentId, long amount, long balanceAfter, LocalDateTime at) {
+        if (memberId <= 0 || paymentId <= 0 || amount < 1 || amount > 1_000_000 || balanceAfter < 0 || at == null) throw new IllegalArgumentException("Invalid payment entry");
+        var entry = new WalletEntry();
+        entry.memberId = memberId;
+        entry.paymentId = paymentId;
+        entry.type = WalletEntryType.PAYMENT;
+        entry.amountDelta = -amount;
+        entry.balanceAfter = balanceAfter;
+        entry.eventKey = "PAYMENT:" + paymentId;
+        entry.createdAt = at;
+        return entry;
+    }
     public Long getMemberId() { return memberId; }
     public Long getPaymentId() { return paymentId; }
     public Long getTopupId() { return topupId; }
