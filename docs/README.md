@@ -48,7 +48,7 @@
 - [토스 충전 신청·조회 API](wallet-topup-api.md): 인증·CSRF 기반 READY 신청 저장과 본인 조회. 신청 자체는 잔액을 증가시키지 않으며 지급은 승인 API를 따른다.
 - [토스 승인·지급·재확인](wallet-topup-approval.md): 외부 호출과 DB 트랜잭션 분리, 멱등 지급·본인 복구 API. 외부 제공자 대역으로 검증하며 실제 결제·인증 통합·자동 복구는 후속이다.
 - [React 토스 충전 화면](wallet-topup-frontend.md): 금액·SDK·복귀 검증·서버 승인·결과 재확인 화면. keys.env 연결과 SDK UI 로딩을 확인했으며 실제 결제·인증 통합은 검증 전이다.
-- [황준범 담당 진행 현황](wallet-payment-progress.md): 지갑·토스 충전·결제·환불·정산의 남은 작업과 가중치 기반 진행률 추정.
+- [최신 main 반영 후 지갑·충전 회귀 검증](wallet-regression-20261102.md): 36a57ce 기준 백엔드 166건·프런트 15건과 lint·build 결과, 실제 인증/결제 미검증 범위.
 
 ## 문서 간 기준
 

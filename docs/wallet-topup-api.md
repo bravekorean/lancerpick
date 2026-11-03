@@ -48,4 +48,4 @@
 
 WalletTopupApiIntegrationTests는 격리 MySQL에서 실제 Security 필터→Controller→Service→Repository를 검사한다. 인증 principal은 테스트에서만 주입하며 실제 로그인 검증은 아니다. 생성/본인 조회·타인 차단·금액·CSRF·서버 생성 식별자·응답 비밀값 제외·잔액/원장 무변경을 확인한다. 일반 테스트와 함께 실행하고 결과는 작업표에 기록한다. 외부 테스트 키와 토스 통신은 사용하지 않는다.
 
-2026-11-02 격리 MySQL 8.4에서 전체 clean build --offline 118건을 통과했다(신규 API 16건). 전용 컨테이너·볼륨 정리 완료. 후속 작업과 진행률 추정은 [담당 진행 현황](wallet-payment-progress.md)을 따른다. 커밋·push·PR·원격 CI는 별도다.
+2026-11-02 격리 MySQL 8.4에서 전체 clean build --offline 118건을 통과했다(신규 API 16건). 전용 컨테이너·볼륨 정리 완료. 후속 작업과 진행률 추정은 담당 진행 현황을 따른다. 커밋·push·PR·원격 CI는 별도다.
