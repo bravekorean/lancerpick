@@ -58,6 +58,8 @@
 
 ## 문서 간 기준
 
+실제 로그인 세션으로 주문·결제·환불·수정·정산을 연결한 서버 검증은 [세션 거래 통합 검사](session-trade-integration.md)를 참고한다.
+
 실제 로그인 세션과 지갑 화면의 연결 범위·담당 협력·검증 결과는 [지갑 세션 연결](wallet-session-integration.md)을 따른다.
 
 운영 데이터 접근을 JPA·QueryDSL로 통일한 최신 범위와 주의점은 [프로젝트 저장소 전환](project-persistence.md)을 따른다.
