@@ -194,6 +194,8 @@ PAYMENT_ALREADY_REFUNDED 응답에는 재결제 성공 의미를 담지 않는�
 
 ## 8 지갑·정산 담당 황준범, 후기 담당 박소현
 
+2026-11-03 후속: [구매 확정·판매 수익 정산](order-settlement.md)의 POST /orders/{id}/confirm, GET /me/settlements, GET /me/settlements/summary 및 판매 수익 화면을 추가했다. 실제 인증·주문 상세의 구매 확정 버튼 연결은 별도다. 아래 후기 API의 구현 완료를 뜻하지 않는다.
+
 | 메서드·경로 | 권한·입력 | 출력 |
 | --- | --- | --- |
 | GET /me/wallet | 회원 | balance,currency=KRW,isTest=true |
