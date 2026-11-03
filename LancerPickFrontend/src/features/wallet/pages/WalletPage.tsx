@@ -17,6 +17,7 @@ const labels: Record<WalletEntryType, string> = {
 /** 인증 연결 전 기본 진입점. 예시 잔액을 실제 잔액처럼 표시하지 않는다. */
 export function WalletPage() {
   return <WalletLayout>
+    <Link className={styles.previewLink} to="/mypage/settlements">판매 수익 확인 →</Link>
     <AsyncState title="잔액 조회를 준비하고 있어요" description="로그인과 본인 조회 API가 연결되면 내 적립금과 이용 내역을 확인할 수 있습니다." />
     <Link className={styles.previewLink} to="/mypage/wallet/preview">예시 데이터로 화면 미리보기 →</Link>
   </WalletLayout>

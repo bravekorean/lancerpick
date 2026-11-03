@@ -85,6 +85,11 @@ public class OrderHistory {
     public static OrderHistory accepted(Long orderId, Long sellerId, LocalDateTime at) {
         return decision(orderId, sellerId, at, OrderHistoryAction.ACCEPTED, OrderStatus.AWAITING_PAYMENT, null);
     }
+    public static OrderHistory completed(Long orderId, Long buyerId, LocalDateTime at) {
+        var history = decision(orderId, buyerId, at, OrderHistoryAction.COMPLETED, OrderStatus.COMPLETED, null);
+        history.fromStatus = OrderStatus.AWAITING_CONFIRMATION;
+        return history;
+    }
     public static OrderHistory cancelled(Long orderId, Long actor, OrderStatus from, LocalDateTime at, String reason) {
         var history = decision(orderId, actor, at, OrderHistoryAction.CANCELLED, OrderStatus.CANCELLED, reason);
         history.fromStatus = from;
