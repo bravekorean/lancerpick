@@ -192,6 +192,14 @@ public class Order {
     }
 
     public Long getSellerId() { return sellerId; }
+    public LocalDateTime getPaidAt() { return paidAt; }
+    public void cancel(LocalDateTime at) {
+        if (status == OrderStatus.COMPLETED || status == OrderStatus.REJECTED || status == OrderStatus.CANCELLED) throw new BusinessException(HttpStatus.CONFLICT,"ORDER_STATE_CONFLICT","취소할 수 없는 주문입니다.");
+        if (at == null || at.getYear() < 1000 || at.getYear() > 9999 || at.isBefore(updatedAt)) throw new IllegalStateException("Invalid cancellation clock");
+        status = OrderStatus.CANCELLED;
+        cancelledAt = at;
+        updatedAt = at;
+    }
     public long getPriceAmount() { return priceAmount; }
 
     public void pay(LocalDateTime at) {
