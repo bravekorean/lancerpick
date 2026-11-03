@@ -87,6 +87,13 @@ public class WalletEntry {
         return entry;
     }
     public Long getMemberId() { return memberId; }
+    public static WalletEntry refund(long memberId, long paymentId, long amount, long balanceAfter, LocalDateTime at) {
+        var entry = payment(memberId, paymentId, amount, balanceAfter, at);
+        entry.type = WalletEntryType.REFUND;
+        entry.amountDelta = amount;
+        entry.eventKey = "REFUND:" + paymentId;
+        return entry;
+    }
     public Long getPaymentId() { return paymentId; }
     public Long getTopupId() { return topupId; }
     public WalletEntryType getType() { return type; }
