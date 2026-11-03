@@ -30,4 +30,7 @@ public class PaymentRepository {
         }, key);
         return key.getKey().longValue();
     }
+    public int markRefunded(long paymentId, LocalDateTime at) {
+        return jdbc.update("UPDATE payments SET status='REFUNDED',refunded_at=? WHERE id=? AND status='PAID'", at, paymentId);
+    }
 }

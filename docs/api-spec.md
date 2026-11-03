@@ -154,6 +154,8 @@ payment: id,amount,feeRateBps,status,paidAt,refundedAt. review는 8절의 Review
 
 ## 6 취소 요청과 재전송 계약
 
+2026-11-03 후속: [주문 적립금 결제](order-wallet-payment.md)와 [직접 취소·전액 적립금 환불](order-refund.md)을 구현했다. 아래 취소 요청 제출·승인·거절·철회 API 및 구매 확정·정산은 아직 별도 구현 대상이다. 직접 취소 시 이미 대기 중인 요청을 함께 해결하는 처리는 포함한다. 실제 인증·React 연결과 구분한다.
+
 | POST 경로 | 실행자·입력 | 결과 |
 | --- | --- | --- |
 | /orders/{id}/cancellation-requests | 구매자; reason,requestKey 필수 | 201 CancellationResult / 기존 요청 200 |
@@ -191,6 +193,8 @@ PAYMENT_ALREADY_REFUNDED 응답에는 재결제 성공 의미를 담지 않는�
 반복 요청에도 실행자 권한을 확인한다. 주문 → 지갑 잠금 순서를 통일한다. 결과 불명확 시 프런트는 조회로 확인하며 변경 요청 자동 재시도는 하지 않는다.
 
 ## 8 지갑·정산 담당 황준범, 후기 담당 박소현
+
+2026-11-03 후속: [구매 확정·판매 수익 정산](order-settlement.md)의 POST /orders/{id}/confirm, GET /me/settlements, GET /me/settlements/summary 및 판매 수익 화면을 추가했다. 실제 인증·주문 상세의 구매 확정 버튼 연결은 별도다. 아래 후기 API의 구현 완료를 뜻하지 않는다.
 
 | 메서드·경로 | 권한·입력 | 출력 |
 | --- | --- | --- |

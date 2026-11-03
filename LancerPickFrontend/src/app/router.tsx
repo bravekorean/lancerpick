@@ -1,4 +1,6 @@
 import { createBrowserRouter } from 'react-router'
+import { OrderDetailPage } from '../features/orders/pages/OrderDetailPage'
+import { SettlementPage } from '../features/settlements/SettlementPage'
 import { LoginPage } from '../features/auth/pages/LoginPage'
 import { ProductListPage } from '../features/products/pages/ProductListPage'
 import { OrderListPage } from '../features/orders/pages/OrderListPage'
@@ -15,7 +17,9 @@ export const router = createBrowserRouter([
       { path: 'login', element: <LoginPage /> },
       { path: 'signup', element: <section style={{ padding: '48px 0' }}><h1>회원가입</h1><p>회원가입은 준비 중입니다. 현재 화면은 예시 서비스 탐색용입니다.</p></section> },
       { path: 'orders', element: <OrderListPage /> },
+      { path: 'orders/:id', element: <OrderDetailPage /> },
       { path: 'mypage', element: <WalletPage /> },
+      { path: 'mypage/settlements', element: <SettlementPage /> },
       { path: 'mypage/wallet', element: <WalletPage /> },
       { path: 'mypage/wallet/preview', element: <WalletPreviewPage /> },
       { path: 'mypage/wallet/topup', element: <WalletTopupPage /> },
