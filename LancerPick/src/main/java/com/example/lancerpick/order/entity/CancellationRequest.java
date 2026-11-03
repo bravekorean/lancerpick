@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+@lombok.Getter
 @Entity
 @Table(name="cancellation_requests")
 public class CancellationRequest {
@@ -33,4 +34,7 @@ public class CancellationRequest {
     protected CancellationRequest() {}
     public void approve(long actor,String response,LocalDateTime at){if(!"PENDING".equals(status) || actor<=0 || at==null || at.isBefore(requestedAt))throw new IllegalStateException("Invalid cancellation approval");status="APPROVED";resolvedBy=actor;responseReason=response;resolvedAt=at;}
 
+    public static CancellationRequest create(long order,long buyer,String key,String reason,LocalDateTime at){var r=new CancellationRequest();r.orderId=order;r.requestedBy=buyer;r.requestKey=key;r.reason=reason;r.status="PENDING";r.requestedAt=at;return r;}
+    public void resolve(String status,long actor,String reason,LocalDateTime at){if(!"PENDING".equals(this.status) || !java.util.Set.of("APPROVED","REJECTED","WITHDRAWN").contains(status) || actor<=0 || at==null || at.isBefore(requestedAt))throw new IllegalStateException("Invalid resolution");this.status=status;this.resolvedBy=actor;this.responseReason=reason;this.resolvedAt=at;}
+    public void clearApprovalResponseReason(){if("APPROVED".equals(status))responseReason=null;}
 }

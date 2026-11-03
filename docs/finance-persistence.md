@@ -1,5 +1,7 @@
 # 결제·정산의 JPA·QueryDSL 전환
 
+2026-11-03 저장소 후속 변경: [프로젝트 JPA·QueryDSL 통일](project-persistence.md)에 따라 현재 운영 구현에서 JdbcTemplate·네이티브 SQL을 제거했다. 아래 이전 SQL 구현 설명·실행 결과는 당시 기록으로 보존하며 현재 구조와 최종 검증 범위는 후속 문서를 따른다.
+
 2026-11-03. refactor/finance-jpa-querydsl. 기존 V1/V2·API·금액/상태 정책은 변경하지 않는다.
 
 ## 변경 이유

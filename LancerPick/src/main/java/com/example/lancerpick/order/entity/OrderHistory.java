@@ -16,6 +16,7 @@ import org.hibernate.type.SqlTypes;
 import org.springframework.http.HttpStatus;
 
 /** 발생한 행동과 당시 주문 상태를 기록하며 수정 메서드를 제공하지 않는다. */
+@lombok.Getter
 @Entity
 @Table(name = "order_histories")
 public class OrderHistory {
