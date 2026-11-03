@@ -1,5 +1,7 @@
 # 잔액·적립금 내역 조회 준비
 
+2026-11-03 저장소 후속 변경: [프로젝트 JPA·QueryDSL 통일](project-persistence.md)에 따라 현재 운영 구현에서 JdbcTemplate·네이티브 SQL을 제거했다. 아래 이전 SQL 구현 설명·실행 결과는 당시 기록으로 보존하며 현재 구조와 최종 검증 범위는 후속 문서를 따른다.
+
 V2 저장 확장 후속: [충전 신청 스키마](wallet-topup-schema.md)에서 원장 TOPUP 유형을 추가했다. 기존 조회 응답 필드는 유지하고 해당 유형의 orderId는 null이다. React 유형·표시 문구도 준비했지만 실제 충전 지급 서비스는 미구현이다. 아래 검증 건수는 각 실행 당시 기록이다.
 
 작성일: 2026-11-02. 담당: 황준범. 현재 작업 브랜치: `feature/wallet-initial-grant`.
