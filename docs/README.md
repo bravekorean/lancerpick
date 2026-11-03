@@ -58,6 +58,8 @@
 
 ## 문서 간 기준
 
+실제 로그인 세션과 지갑 화면의 연결 범위·담당 협력·검증 결과는 [지갑 세션 연결](wallet-session-integration.md)을 따른다.
+
 운영 데이터 접근을 JPA·QueryDSL로 통일한 최신 범위와 주의점은 [프로젝트 저장소 전환](project-persistence.md)을 따른다.
 
 결제·정산 저장소의 현재 JPA·QueryDSL 구조와 변경 이유는 [금액 처리 저장소 전환](finance-persistence.md)을 따른다.
