@@ -59,6 +59,8 @@ npm.cmd run dev
 
 ## 검사
 
+판매자 프로필 관리는 `/mypage/seller-profile`에서 서버 세션 확인 후 조회·등록·수정합니다. 미등록 404는 빈 폼, 인증 만료는 로그인 안내, 통신 오류는 오류로 구분합니다. 마이페이지 메뉴에도 연결했으며 [구현·브라우저 검증 범위](../docs/seller-profile.md)를 참고합니다. 일반 로그인/회원가입 화면의 통합은 후속입니다.
+
 ```powershell
 npm.cmd run test:api
 npm.cmd run typecheck

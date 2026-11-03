@@ -87,6 +87,7 @@ function WalletLayout({ children, preview = false }: { children: ReactNode; prev
         <div className={styles.account}><span className={styles.avatar} aria-hidden="true">L</span><strong>나의 공간</strong><small>{preview ? '예시 화면을 둘러보고 있어요' : '로그인 연동 준비 중'}</small></div>
         <nav className={styles.menu} aria-label="내 활동">
           <span className={styles.menuLabel}>내 활동</span>
+          <Link to="/mypage/seller-profile">판매자 프로필</Link>
           <span className={styles.active} aria-current="page">적립금 · 이용 내역 <span aria-hidden="true">↗</span></span>
           <span className={styles.disabled}>구매 내역 <small>준비 중</small></span>
           <span className={styles.disabled}>판매 내역 <small>준비 중</small></span>
