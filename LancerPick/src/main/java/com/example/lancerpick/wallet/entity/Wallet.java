@@ -37,6 +37,14 @@ public class Wallet {
     }
 
     public Long getMemberId() { return memberId; }
+    /** 구매자 지갑의 배타 잠금을 획득한 트랜잭션에서 호출한다. */
+    public void debit(long amount, LocalDateTime at) {
+        if (amount < 1 || amount > 1_000_000 || at == null || at.isBefore(updatedAt)) throw new IllegalArgumentException("Invalid wallet debit");
+        if (balance < amount) throw new com.example.lancerpick.common.exception.BusinessException(
+                org.springframework.http.HttpStatus.CONFLICT, "INSUFFICIENT_BALANCE", "적립금 잔액이 부족합니다.");
+        balance -= amount;
+        updatedAt = at;
+    }
     public long getBalance() { return balance; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

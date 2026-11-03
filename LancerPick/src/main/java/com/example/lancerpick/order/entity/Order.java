@@ -192,6 +192,19 @@ public class Order {
     }
 
     public Long getSellerId() { return sellerId; }
+    public long getPriceAmount() { return priceAmount; }
+
+    public void pay(LocalDateTime at) {
+        if (status != OrderStatus.AWAITING_PAYMENT) throw new BusinessException(HttpStatus.CONFLICT, "ORDER_STATE_CONFLICT", "결제 대기 주문만 결제할 수 있습니다.");
+        if (at == null || at.getYear() < 1000 || at.getYear() > 9999 || at.isBefore(updatedAt)) throw new IllegalStateException("Invalid payment clock");
+        var due = at.plusDays(durationDaysSnapshot);
+        if (due.getYear() > 9999) throw new IllegalStateException("Payment due date outside database range");
+        buyerConfirmedTermsAt = at;
+        paidAt = at;
+        dueAt = due;
+        updatedAt = at;
+        status = OrderStatus.IN_PROGRESS;
+    }
     public Long getBuyerId() { return buyerId; }
     public int getDurationDaysSnapshot() { return durationDaysSnapshot; }
 
