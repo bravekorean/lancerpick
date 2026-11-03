@@ -5,6 +5,7 @@ import com.example.lancerpick.common.text.TextNormalizer;
 import com.example.lancerpick.common.web.PageResponse;
 import com.example.lancerpick.product.dto.ProductSummaryResponse;
 import com.example.lancerpick.product.repository.ProductSearchQueries;
+import java.util.List;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,7 +33,7 @@ public class ProductSearchService {
         long total = queries.count(normalizedKeyword, parsedCategoryId);
         long offset = (long) page * size;
 
-        var items = queries.find(
+        var items = offset >= total ? List.<ProductSummaryResponse>of() : queries.find(
                 normalizedKeyword, parsedCategoryId, size, offset
         );
 

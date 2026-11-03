@@ -6,7 +6,7 @@
 
 API 명세 1·3·9·10절에 따라 `GET /api/products`를 구현했다. 로그인 없이 조회하며 `keyword`, `categoryId`, `page`, `size`를 받는다. React 메인 검색도 실제 상품·카테고리 API로 연결했다. 상품 등록·상세·주문 진입 기능과 구분한다.
 
-- 서버 SQL에서 판매 중(`ON_SALE`)이고 관리자에게 숨겨지지 않은 상품만 조회한다.
+- 서버 QueryDSL 조건에서 판매 중(`ON_SALE`)이고 관리자에게 숨겨지지 않은 상품만 조회한다.
 - keyword는 공통 TextNormalizer로 정규화하고 최대 100 코드 포인트를 허용한다. 생략·정규화 후 빈 값은 제한 없음이다.
 - 제목 또는 설명의 포함 검색이며, 카테고리 조건과는 AND로 결합한다. `%`, `_`, `!`, 역슬래시 등 사용자 입력은 바인딩하며 LIKE 와일드카드로 실행하지 않는다.
 - categoryId는 생략 가능하지만 제출하면 양의 BIGINT 10진 문자열이어야 한다. 형식·범위 오류는 400 VALIDATION_FAILED, 존재하지 않는 정상 ID는 빈 결과다.
@@ -16,7 +16,7 @@ API 명세 1·3·9·10절에 따라 `GET /api/products`를 구현했다. 로그�
 
 ## 구조와 연결
 
-ProductSearchController → 읽기 전용 ProductSearchService → ProductSearchQueries(JdbcTemplate) → 기존 products/categories/members 조인이다. 기존 관리자 상품 SQL과 같은 조회 방식을 사용하며, 관리자 전용 응답이나 쓰기 경로를 공개 API에 재사용하지 않는다. CategoryResponse는 재사용한다. Product 엔티티·테이블·마이그레이션을 추가하지 않는다.
+ProductSearchController → 읽기 전용 ProductSearchService → ProductSearchQueries(QueryDSL/JPA) → 기존 Product·Category·Member 조인이다. 최신 main의 [JPA·QueryDSL 통일 기준](project-persistence.md)에 맞춰 운영 코드의 직접 JDBC를 제거했다. 목록에 필요한 열만 선택하고 관리자 전용 응답이나 쓰기 경로를 공개 API에 재사용하지 않는다. CategoryResponse와 공유 Product Entity는 재사용하며 테이블·마이그레이션을 추가하지 않는다. 범위 밖 페이지는 Service에서 집계 후 빈 목록을 반환해 JPA offset의 int 변환 오류를 방지한다.
 
 Service와 Queries는 demo에서 제외한다. 실제 DB가 없는 공통 HTTP 테스트에만 검색 Service·Queries mock을 추가했다. Security 공개 경로는 기존 `/api/products` 설정을 사용하고 CSRF·보호 API 정책을 변경하지 않는다.
 
@@ -55,4 +55,14 @@ React 메인은 `/api/products`와 `/api/categories`를 사용한다. 조회 키
 - 임시 백엔드 종료 시 상품·카테고리 오류와 재조회 버튼이 표시된다. 서버 복구 후 각 버튼으로 정상 재조회한다. 오류를 빈 성공·예시 상품으로 대체하지 않는다.
 - 문구 수정 후 타입 검사 포함 build·lint·test:api 23건을 다시 통과했다. 임시 백엔드·Vite·MySQL을 종료하고 임시 자격 정보 파일을 제거했다.
 
-main 화면에는 DB를 사용하는 기본 백엔드가 필요하며 demo 프로필의 예시 API로 자동 전환하지 않는다. 팀 기준 MySQL 8.4·최신 CI·리뷰 승인 확인은 남아 있다. 커밋·Push·PR 병합은 이번 단계에서 수행하지 않았다.
+main 화면에는 DB를 사용하는 기본 백엔드가 필요하며 demo 프로필의 예시 API로 자동 전환하지 않는다. 팀 기준 MySQL 8.4·최신 CI·리뷰 승인 확인은 남아 있다. 초기 브라우저 검증 단계에서는 커밋·Push·PR 병합을 수행하지 않았으며, 아래 후속 검증과 구분한다.
+
+## 최신 main 반영 후 Push 전 검증
+
+2026-11-03 커밋 준비 중 main의 `29afd0c`까지 JPA·QueryDSL 통일 변경이 추가되어 반영했다. 공통 HTTP 테스트 충돌은 검색 Service/Queries와 팀원의 정산 Repository 모의 빈을 모두 보존해 해결했다. ProductSearchQueries도 공유 QProduct·QCategory·QMember를 사용하는 QueryDSL 스칼라 조회로 전환했다. 운영 코드에 직접 JDBC/네이티브 SQL을 다시 추가하지 않는다. 테스트 fixture SQL은 기존 규칙대로 유지한다.
+
+집계보다 큰 offset은 Service에서 바로 빈 목록을 반환한다. 기본 빈 결과·큰 페이지의 HTTP 검사도 DB 목록 호출을 건너뛰는 계약으로 보완했다. 검색어 정규화·특수문자 처리·공개 상품 조건·응답 모양은 유지한다.
+
+개인 DB와 분리한 새 임시 MySQL **8.0.46**에서 V1/V2·Hibernate validate를 포함한 `gradlew.bat build --no-daemon`을 재실행했다. 전체 **512건**(상품 검색 22건·운영 영속성 경계 검사 포함), 실패·오류·건너뜀 0이다. 임시 DB는 종료하고 자격 정보 파일을 제거했다. 프런트는 이 후속 변경에서 수정하지 않았으며 앞선 build·lint·23건 결과를 따른다. 앞선 브라우저 확인은 JDBC 구현 당시 결과이며, QueryDSL 전환 후 실제 MySQL HTTP·검색 통합 검사는 이번 전체 빌드에서 재실행했다. 실제 브라우저 클릭을 다시 실행한 것으로 기록하지 않는다.
+
+원격 MySQL 8.4 CI와 작성자 외 1명 이상 승인은 Push 후 최신 PR에서 확인한다. main에 직접 Push하거나 PR을 병합하지 않는다.

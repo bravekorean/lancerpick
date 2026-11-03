@@ -7,7 +7,6 @@ import com.example.lancerpick.common.web.TraceIdFilter;
 import com.example.lancerpick.product.controller.ProductSearchController;
 import com.example.lancerpick.product.repository.ProductSearchQueries;
 import com.example.lancerpick.product.service.ProductSearchService;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -39,7 +38,7 @@ class ProductSearchControllerTests {
                 .andExpect(jsonPath("$.page").value(0)).andExpect(jsonPath("$.size").value(20))
                 .andExpect(jsonPath("$.totalElements").value(0)).andExpect(jsonPath("$.totalPages").value(0));
         verify(queries).count(null, null);
-        verify(queries).find(null, null, 20, 0L);
+        verifyNoMoreInteractions(queries);
     }
 
     @ParameterizedTest
@@ -67,22 +66,17 @@ class ProductSearchControllerTests {
         verify(queries).count(keyword, null);
         mvc.perform(get("/api/products").param("keyword", keyword + "😀"))
                 .andExpect(status().isBadRequest());
-        verifyNoMoreInteractionsAfterFind(keyword);
-    }
-
-    private void verifyNoMoreInteractionsAfterFind(String keyword) {
-        verify(queries).find(keyword, null, 20, 0L);
         verifyNoMoreInteractions(queries);
     }
 
     @Test
     void whitespaceOnlyMeansNoKeywordAndOffsetDoesNotOverflow() throws Exception {
         when(queries.count(null, 12L)).thenReturn(201L);
-        when(queries.find(null, 12L, 100, 214748364700L)).thenReturn(List.of());
         mvc.perform(get("/api/products").param("keyword", "\u0085 \u3000")
                         .param("categoryId", "12").param("page", "2147483647").param("size", "100"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.items").isEmpty())
                 .andExpect(jsonPath("$.totalElements").value(201)).andExpect(jsonPath("$.totalPages").value(3));
-        verify(queries).find(null, 12L, 100, 214748364700L);
+        verify(queries).count(null, 12L);
+        verifyNoMoreInteractions(queries);
     }
 }
