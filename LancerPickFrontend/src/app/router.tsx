@@ -4,6 +4,7 @@ import { SettlementPage } from '../features/settlements/SettlementPage'
 import { LoginPage } from '../features/auth/pages/LoginPage'
 import { SignupPage } from '../features/auth/pages/SignupPage'
 import { ProductListPage } from '../features/products/pages/ProductListPage'
+import { ProductDetailPage } from '../features/products/pages/ProductDetailPage'
 import { SellerProfilePage } from '../features/seller/pages/SellerProfilePage'
 import { OrderListPage } from '../features/orders/pages/OrderListPage'
 import { AppLayout } from '../shared/components/AppLayout'
@@ -16,6 +17,7 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <ProductListPage /> },
+      { path: 'products/:id', element: <ProductDetailPage /> },
       { path: 'login', element: <LoginPage /> },
       { path: 'signup', element: <SignupPage /> },
       { path: 'orders', element: <OrderListPage /> },
