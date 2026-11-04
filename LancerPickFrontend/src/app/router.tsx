@@ -1,6 +1,6 @@
 import { createBrowserRouter } from 'react-router'
 import { OrderDetailPage } from '../features/orders/pages/OrderDetailPage'
-import { SettlementPage } from '../features/settlements/SettlementPage'
+import { SettlementPage } from '../features/settlements/pages/SettlementPage'
 import { LoginPage } from '../features/auth/pages/LoginPage'
 import { SignupPage } from '../features/auth/pages/SignupPage'
 import { ProductListPage } from '../features/products/pages/ProductListPage'
