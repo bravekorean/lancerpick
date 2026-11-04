@@ -149,21 +149,58 @@ test('network or server failure is treated as unclear, client errors are not', (
   }
 })
 
-test('recheck after an unclear result drops the CSRF token and marks the session for a fresh check without replaying the command', async () => {
+test('logout response lost but /me is 401: recheck clears previous wallet, order and profile caches without replaying logout', async () => {
   let csrfCalls = 0
   const commands = []
   globalThis.fetch = async (url, options) => {
     if (url === '/api/auth/csrf') { csrfCalls++; return json({ token: `csrf-${csrfCalls}`, headerName: 'X-CSRF-TOKEN' }) }
+    if (url === '/api/me') return error('AUTHENTICATION_REQUIRED', 401)
     commands.push(`${options.method} ${url}`)
     return json({})
   }
   await apiRequest('/x', { method: 'POST' })
+  commands.length = 0
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(memberQueryKey, member)
-  await recheckSession(client)
-  assert.equal(client.getQueryState(memberQueryKey).isInvalidated, true, '다음 화면 표시 때 서버에 다시 확인한다')
-  assert.deepEqual(commands, ['POST /api/x'], '로그인·로그아웃 요청을 다시 보내지 않는다')
+  client.setQueryData(['wallet', 'session'], member)
+  client.setQueryData(['wallet', member.id, 'balance'], { balance: 1000000 })
+  client.setQueryData(['seller-profile', member.id], { id: member.id })
+  client.setQueryData(['seller-profile-session'], member)
+
+  assert.equal(await recheckSession(client), 'signedOut')
+  assert.equal(client.getQueryData(memberQueryKey), null)
+  for (const key of [['wallet', 'session'], ['wallet', member.id, 'balance'], ['seller-profile', member.id], ['seller-profile-session']]) {
+    assert.equal(client.getQueryData(key), undefined, JSON.stringify(key))
+  }
+  assert.deepEqual(commands, [], '로그아웃을 다시 보내지 않는다')
   await apiRequest('/x', { method: 'POST' })
   assert.equal(csrfCalls, 2, '버린 토큰 대신 새 CSRF 토큰을 받는다')
+  client.clear()
+})
+
+test('recheck keeps caches when the same member is still logged in and resets them for a different member', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(memberQueryKey, member)
+  client.setQueryData(['wallet', member.id, 'balance'], { balance: 1 })
+  globalThis.fetch = async () => json(member)
+  assert.equal(await recheckSession(client), 'same')
+  assert.deepEqual(client.getQueryData(['wallet', member.id, 'balance']), { balance: 1 })
+
+  const other = { ...member, id: '42', displayName: '다른 회원' }
+  globalThis.fetch = async () => json(other)
+  assert.equal(await recheckSession(client), 'changed')
+  assert.deepEqual(client.getQueryData(memberQueryKey), other)
+  assert.equal(client.getQueryData(['wallet', member.id, 'balance']), undefined)
+  client.clear()
+})
+
+test('if the recheck itself fails, previous personal caches are still removed and the session is marked for another check', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(memberQueryKey, member)
+  client.setQueryData(['wallet', member.id, 'balance'], { balance: 1 })
+  globalThis.fetch = async () => { throw new TypeError('network failed') }
+  assert.equal(await recheckSession(client), 'unknown')
+  assert.equal(client.getQueryData(['wallet', member.id, 'balance']), undefined)
+  assert.equal(client.getQueryState(memberQueryKey).isInvalidated, true)
   client.clear()
 })

@@ -36,7 +36,12 @@ export function LoginPage() {
       navigate(next, { replace: true })
     },
     // 결과가 불명확하면 실제 로그인 상태를 다시 확인한다. 로그인됐다면 '이미 로그인' 화면으로 바뀐다.
-    onError: async (error) => { if (isUnclearResult(error)) await recheckSession(client) },
+    onError: async (error) => {
+      if (!isUnclearResult(error)) return
+      // 서버에서는 로그인이 됐을 수 있다. 다시 확인해서 로그인돼 있으면 원래 가려던 곳으로 보낸다.
+      const outcome = await recheckSession(client)
+      if (outcome === 'changed' || outcome === 'same') navigate(next, { replace: true })
+    },
   })
 
   function onSubmit(event: FormEvent) {

@@ -20,7 +20,10 @@ export function MemberNav({ signupClassName, buttonClassName }: { signupClassNam
       // 401은 이미 세션이 끝난 것이므로 로그아웃 성공과 똑같이 정리한다.
       if (error && !(error instanceof ApiError && error.status === 401)) {
         // 서버는 로그아웃을 끝냈을 수도 있다. 실패로 단정하지 않고 실제 상태를 다시 확인한다.
-        if (isUnclearResult(error)) await recheckSession(client)
+        if (!isUnclearResult(error)) return
+        // 서버는 로그아웃을 끝냈을 수도 있다. 다시 확인해서 로그인 상태가 아니면 개인 캐시를 지우고 보호 화면에서 벗어난다.
+        const outcome = await recheckSession(client)
+        if (outcome !== 'same') navigate('/', { replace: true })
         return
       }
       await resetAccountState(client, null)

@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { ApiError, clearCsrfToken } from '../../shared/api/client.ts'
 import { clearWalletCache } from '../wallet/cache.ts'
+import { getCurrentMember } from './api.ts'
 import type { Member } from './types.ts'
 
 /** 현재 로그인 회원 조회 결과의 캐시 이름표. 헤더·화면이 같이 쓴다. */
@@ -17,10 +18,18 @@ export async function resetAccountState(queryClient: QueryClient, member: Member
   clearCsrfToken()
   // 진행 중인 GET /api/me를 먼저 멈춘다. 멈추지 않으면 그 늦은 응답이 아래에서 넣은 새 상태를 덮어쓴다.
   await queryClient.cancelQueries({ queryKey: memberQueryKey })
-  await clearWalletCache(queryClient)
+  await clearPersonalCaches(queryClient)
+  queryClient.setQueryData(memberQueryKey, member)
+}
+
+/**
+ * 이전 계정의 개인 정보(지갑·충전 진행 정보·주문·판매자 프로필 등)를 지운다.
+ * 진행 중인 조회는 먼저 멈춰서 늦은 응답이 다시 캐시를 채우지 않게 한다. ['auth']는 호출한 쪽이 관리한다.
+ */
+async function clearPersonalCaches(queryClient: QueryClient) {
+  await clearWalletCache(queryClient) // 지갑 캐시 + 토스 충전 진행 정보(clearCheckoutState)
   await queryClient.cancelQueries({ predicate: (query) => query.queryKey[0] !== 'auth' })
   queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'auth' })
-  queryClient.setQueryData(memberQueryKey, member)
 }
 
 /**
@@ -31,13 +40,35 @@ export function isUnclearResult(error: unknown) {
   return !(error instanceof ApiError) || error.status === 0 || error.status >= 500
 }
 
+/** recheckSession 결과. same=같은 계정 그대로, signedOut=로그인 안 함, changed=다른 계정, unknown=확인 실패 */
+export type RecheckOutcome = 'same' | 'signedOut' | 'changed' | 'unknown'
+
 /**
- * 결과가 불명확할 때 호출한다. 서버가 CSRF 토큰을 이미 바꿨을 수 있으니 버리고,
- * GET /api/me로 실제 로그인 상태를 다시 확인한다. 요청 자체는 다시 보내지 않는다.
+ * 로그인·로그아웃 결과가 불명확할 때 호출한다. 요청 자체는 다시 보내지 않는다.
+ * 1) 서버가 CSRF 토큰을 이미 바꿨을 수 있으니 버린다.
+ * 2) 진행 중인 /api/me를 멈추고 서버에 직접 다시 물어본다.
+ * 3) 로그인 안 함·다른 계정이면 resetAccountState로 이전 계정의 개인 캐시를 전부 정리한다.
+ * 4) 다시 묻는 것도 실패하면 개인 캐시를 정리하고 로그인 상태는 다음 화면 표시 때 확인한다(이전 정보를 남기지 않는 쪽).
+ * 호출한 화면은 signedOut·changed·unknown이면 보고 있던 보호 화면에서 벗어나야 한다(떠 있는 화면은 캐시 삭제만으로 다시 그려지지 않는다).
  */
-export async function recheckSession(queryClient: QueryClient) {
+export async function recheckSession(queryClient: QueryClient): Promise<RecheckOutcome> {
+  const previous = queryClient.getQueryData<Member | null>(memberQueryKey)
   clearCsrfToken()
-  await queryClient.invalidateQueries({ queryKey: memberQueryKey })
+  await queryClient.cancelQueries({ queryKey: memberQueryKey })
+  let current: Member | null
+  try {
+    current = await getCurrentMember()
+  } catch {
+    await clearPersonalCaches(queryClient)
+    await queryClient.invalidateQueries({ queryKey: memberQueryKey })
+    return 'unknown'
+  }
+  if (current && previous && current.id === previous.id) {
+    queryClient.setQueryData(memberQueryKey, current)
+    return 'same'
+  }
+  await resetAccountState(queryClient, current)
+  return current ? 'changed' : 'signedOut'
 }
 
 /**
