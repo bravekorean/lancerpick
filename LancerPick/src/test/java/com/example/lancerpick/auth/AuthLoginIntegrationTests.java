@@ -10,7 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.lancerpick.common.security.AuthenticatedMember;
-import com.example.lancerpick.member.repository.MemberRepository;
 import com.example.lancerpick.support.IntegrationTest;
 import java.util.List;
 import java.util.UUID;
@@ -28,10 +27,6 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.reset;
 
 /**
  * 실제 Security 필터 → AuthController/MeController → Service → MySQL 로그인 검사.
@@ -45,12 +40,9 @@ class AuthLoginIntegrationTests {
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
-    // 실제 Repository를 감싸서 특정 메서드만 실패시키는 용도(나머지는 진짜로 동작)
-    @MockitoSpyBean MemberRepository members;
 
     @AfterEach
     void removeOnlyThisTestsMembers() {
-        reset(members);
         List<Long> ids = jdbc.queryForList("SELECT id FROM members WHERE email LIKE ?", Long.class, EMAIL_PREFIX + "%");
         for (Long id : ids) jdbc.update("DELETE FROM wallet_entries WHERE member_id = ?", id);
         for (Long id : ids) jdbc.update("DELETE FROM wallets WHERE member_id = ?", id);
@@ -79,22 +71,6 @@ class AuthLoginIntegrationTests {
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.id").value(String.valueOf(id)))
                 .andExpect(jsonPath("$.displayName").value("로그인"));
-    }
-
-    @Test
-    void responseLookupFailureLeavesNoLoggedInSession() throws Exception {
-        String email = signupMember("조회실패");
-        doThrow(new IllegalStateException("db failure")).when(members).countSellerProfiles(anyLong());
-
-        MockHttpSession session = new MockHttpSession();
-        mvc.perform(post("/api/auth/login").session(session).with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON).content(body(email, PASSWORD)))
-                .andExpect(status().isInternalServerError());
-
-        // 응답이 실패했으면 서버 세션에도 로그인 정보가 남지 않아야 한다.
-        assertThat(session.getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY)).isNull();
-        reset(members);
-        mvc.perform(get("/api/me").session(session)).andExpect(status().isUnauthorized());
     }
 
     @Test

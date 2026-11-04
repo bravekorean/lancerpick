@@ -113,3 +113,27 @@ test('next path only allows same-site paths', () => {
     assert.equal(safeNextPath(next), '/', String(next))
   }
 })
+
+test('a late /me response that started before login cannot overwrite the new account state', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let finishOld
+  const pending = client.fetchQuery({
+    queryKey: memberQueryKey,
+    queryFn: () => new Promise((resolve) => { finishOld = () => resolve(null) }),
+  }).catch(() => undefined)
+  await resetAccountState(client, member)
+  finishOld() // 로그인 전에 보낸 조회가 이제야 '로그인 안 함'으로 도착
+  await pending
+  assert.deepEqual(client.getQueryData(memberQueryKey), member)
+
+  let finishStale
+  const stale = client.fetchQuery({
+    queryKey: memberQueryKey, staleTime: 0,
+    queryFn: () => new Promise((resolve) => { finishStale = () => resolve(member) }),
+  }).catch(() => undefined)
+  await resetAccountState(client, null) // 로그아웃
+  finishStale() // 로그아웃 전에 보낸 조회가 이전 회원으로 도착
+  await stale
+  assert.equal(client.getQueryData(memberQueryKey), null)
+  client.clear()
+})
