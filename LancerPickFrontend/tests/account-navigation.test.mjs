@@ -9,7 +9,7 @@ import { createServer } from 'vite'
 const server = await createServer({ configFile: false, cacheDir: 'node_modules/.vite-test-account-navigation',
   server: { middlewareMode: true, ws: false, watch: null }, appType: 'custom' })
 const { WalletPreviewPage, ConnectedWalletPage } = await server.ssrLoadModule('/src/features/wallet/pages/WalletPage.tsx')
-const { SettlementPage } = await server.ssrLoadModule('/src/features/settlements/SettlementPage.tsx')
+const { SettlementPage } = await server.ssrLoadModule('/src/features/settlements/pages/SettlementPage.tsx')
 const { OrderListPage } = await server.ssrLoadModule('/src/features/orders/pages/OrderListPage.tsx')
 const { OrderDetailPage } = await server.ssrLoadModule('/src/features/orders/pages/OrderDetailPage.tsx')
 const { ApiError } = await server.ssrLoadModule('/src/shared/api/client.ts')
