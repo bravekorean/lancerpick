@@ -1,15 +1,15 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { apiRequest, ApiError } from '../../shared/api/client'
 import type { PageResponse } from '../../shared/api/types'
 import { formatWon, formatDateTime } from '../../shared/lib/format'
+import { usePageSearchParam } from '../../shared/lib/usePageSearchParam'
 import styles from './SettlementPage.module.css'
 
 interface Settlement { id: string; orderId: string; grossAmount: number; feeRateBps: number; feeAmount: number; sellerAmount: number; createdAt: string }
 interface Summary { completedCount: number; grossAmount: number; feeAmount: number; sellerAmount: number }
 export function SettlementPage() {
-  const [page, setPage] = useState(0)
+  const [page, setPage] = usePageSearchParam()
   // wallet 하위 키로 두어 기존 로그아웃/계정 전환 캐시 정리에 참여한다.
   const list = useQuery({ queryKey: ['wallet', 'settlements', page], queryFn: ({ signal }) => apiRequest<PageResponse<Settlement>>(`/me/settlements?page=${page}&size=20`, { signal }), retry: false, gcTime: 0, staleTime: 0 })
   const summary = useQuery({ queryKey: ['wallet', 'settlement-summary'], queryFn: ({ signal }) => apiRequest<Summary>('/me/settlements/summary', { signal }), retry: false, gcTime: 0, staleTime: 0 })
@@ -23,8 +23,9 @@ export function SettlementPage() {
       : <>
         <dl className={styles['settlement-summary']}><div><dt>완료 거래</dt><dd>{summary.data.completedCount}건</dd></div><div><dt>총 결제액</dt><dd>{formatWon(summary.data.grossAmount)}</dd></div><div><dt>수수료</dt><dd>{formatWon(summary.data.feeAmount)}</dd></div><div><dt>판매 수익</dt><dd>{formatWon(summary.data.sellerAmount)}</dd></div></dl>
         <h2>정산 내역</h2>
-        {list.data.items.length === 0 ? <p>이 페이지에 정산 내역이 없습니다.</p> : <ul className={styles['settlement-list']}>{list.data.items.map(item => <li key={item.id}><strong>주문 #{item.orderId}</strong><time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time><p>결제액 {formatWon(item.grossAmount)} · 수수료 {formatWon(item.feeAmount)}</p><b>판매 수익 {formatWon(item.sellerAmount)}</b></li>)}</ul>}
-        <nav aria-label="정산 내역 페이지"><button disabled={page === 0} onClick={() => setPage(p => p - 1)}>이전</button><span>{page + 1}페이지</span><button disabled={page + 1 >= list.data.totalPages} onClick={() => setPage(p => p + 1)}>다음</button></nav>
+        {list.data.items.length === 0 ? <p>이 페이지에 정산 내역이 없습니다.</p> : <ul className={styles['settlement-list']}>{list.data.items.map(item => <li key={item.id}><Link className={styles['order-link']} to={`/orders/${item.orderId}`}>주문 #{item.orderId} 상세 보기</Link><time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time><p>결제액 {formatWon(item.grossAmount)} · 수수료 {formatWon(item.feeAmount)}</p><b>판매 수익 {formatWon(item.sellerAmount)}</b></li>)}</ul>}
+        {list.data.items.length === 0 && page > 0 && <button disabled={list.isFetching} onClick={() => setPage(0)}>첫 페이지로</button>}
+        {page < list.data.totalPages && <nav aria-label="정산 내역 페이지"><button disabled={list.isFetching || page === 0} onClick={() => setPage(page - 1)}>이전</button><span>{page + 1}페이지</span><button disabled={list.isFetching || page + 1 >= list.data.totalPages} onClick={() => setPage(page + 1)}>다음</button></nav>}
       </>}
   </section>
 }
