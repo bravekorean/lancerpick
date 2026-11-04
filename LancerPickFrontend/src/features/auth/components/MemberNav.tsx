@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from 'react-router'
 import { ApiError } from '../../../shared/api/client'
 import { logout } from '../api'
 import { useCurrentMember } from '../queries'
-import { resetAccountState } from '../session'
+import { isUnclearResult, recheckSession, resetAccountState } from '../session'
 
 /**
  * 헤더 오른쪽 회원 메뉴. 로그인 상태는 서버의 GET /api/me 결과로만 판단한다.
@@ -18,7 +18,11 @@ export function MemberNav({ signupClassName, buttonClassName }: { signupClassNam
     mutationFn: logout,
     onSettled: async (_data, error) => {
       // 401은 이미 세션이 끝난 것이므로 로그아웃 성공과 똑같이 정리한다.
-      if (error && !(error instanceof ApiError && error.status === 401)) return
+      if (error && !(error instanceof ApiError && error.status === 401)) {
+        // 서버는 로그아웃을 끝냈을 수도 있다. 실패로 단정하지 않고 실제 상태를 다시 확인한다.
+        if (isUnclearResult(error)) await recheckSession(client)
+        return
+      }
       await resetAccountState(client, null)
       navigate('/', { replace: true })
     },

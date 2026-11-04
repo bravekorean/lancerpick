@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { clearCsrfToken } from '../../shared/api/client.ts'
+import { ApiError, clearCsrfToken } from '../../shared/api/client.ts'
 import { clearWalletCache } from '../wallet/cache.ts'
 import type { Member } from './types.ts'
 
@@ -24,11 +24,34 @@ export async function resetAccountState(queryClient: QueryClient, member: Member
 }
 
 /**
+ * 서버가 처리했는지 알 수 없는 실패: 통신 오류(status 0)·5xx.
+ * 예) 서버는 로그인을 끝냈는데 응답만 못 받은 경우. 실패로 단정하지 않는다(개발 규칙 4절).
+ */
+export function isUnclearResult(error: unknown) {
+  return !(error instanceof ApiError) || error.status === 0 || error.status >= 500
+}
+
+/**
+ * 결과가 불명확할 때 호출한다. 서버가 CSRF 토큰을 이미 바꿨을 수 있으니 버리고,
+ * GET /api/me로 실제 로그인 상태를 다시 확인한다. 요청 자체는 다시 보내지 않는다.
+ */
+export async function recheckSession(queryClient: QueryClient) {
+  clearCsrfToken()
+  await queryClient.invalidateQueries({ queryKey: memberQueryKey })
+}
+
+/**
  * 로그인 후 돌아갈 주소. 같은 사이트 안의 경로만 허용한다.
  * "//evil.com" 이나 "https://..." 를 넣어 다른 사이트로 보내는 공격(오픈 리다이렉트)을 막는다.
  */
 export function safeNextPath(next: string | null | undefined) {
-  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return '/'
+  if (!next || !next.startsWith('/') || next.startsWith('//')) return '/'
+  // 브라우저는 주소의 탭·줄바꿈 같은 제어 문자를 지우고 역슬래시를 /로 읽는다.
+  // 그래서 "/(탭)/evil.com"이 "//evil.com"(다른 사이트)이 될 수 있어, 이런 글자가 있으면 홈으로 보낸다.
+  for (const character of next) {
+    const code = character.codePointAt(0) ?? 0
+    if (code <= 0x1f || code === 0x7f || character === '\\') return '/'
+  }
   if (next.startsWith('/login') || next.startsWith('/signup')) return '/'
   return next
 }

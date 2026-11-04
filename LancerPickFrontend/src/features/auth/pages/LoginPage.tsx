@@ -6,7 +6,7 @@ import { Button } from '../../../shared/components/Button'
 import { Input } from '../../../shared/components/Input'
 import { login } from '../api'
 import { useCurrentMember } from '../queries'
-import { resetAccountState, safeNextPath } from '../session'
+import { isUnclearResult, recheckSession, resetAccountState, safeNextPath } from '../session'
 import type { LoginInput } from '../types'
 import { validateLogin, type LoginErrors } from '../validation'
 import { AuthLayout } from './AuthLayout'
@@ -35,6 +35,8 @@ export function LoginPage() {
       await resetAccountState(client, member)
       navigate(next, { replace: true })
     },
+    // 결과가 불명확하면 실제 로그인 상태를 다시 확인한다. 로그인됐다면 '이미 로그인' 화면으로 바뀐다.
+    onError: async (error) => { if (isUnclearResult(error)) await recheckSession(client) },
   })
 
   function onSubmit(event: FormEvent) {
@@ -79,6 +81,7 @@ export function LoginPage() {
 /** 화면은 문구가 아니라 code로 판단한다(개발 규칙 5절). */
 function loginErrorMessage(error: Error) {
   if (!(error instanceof ApiError)) return '로그인하지 못했어요. 다시 시도해 주세요.'
+  if (isUnclearResult(error)) return '로그인 결과를 확인하지 못했어요. 로그인 상태를 다시 확인하고 있어요.'
   if (error.code === 'INVALID_CREDENTIALS') return '이메일 또는 비밀번호가 올바르지 않아요.'
   if (error.code === 'CSRF_INVALID') return '요청 정보가 만료됐어요. 다시 로그인해 주세요.'
   if (error.code === 'VALIDATION_FAILED') return '이메일과 비밀번호를 입력해 주세요.'

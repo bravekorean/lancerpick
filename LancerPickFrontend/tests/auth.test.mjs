@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import { QueryClient } from '@tanstack/react-query'
 import { getCurrentMember, login, logout, signup } from '../src/features/auth/api.ts'
-import { memberQueryKey, resetAccountState, safeNextPath } from '../src/features/auth/session.ts'
+import { isUnclearResult, memberQueryKey, recheckSession, resetAccountState, safeNextPath } from '../src/features/auth/session.ts'
 import { validateLogin, validateSignup } from '../src/features/auth/validation.ts'
-import { apiRequest, clearCsrfToken } from '../src/shared/api/client.ts'
+import { ApiError, apiRequest, clearCsrfToken } from '../src/shared/api/client.ts'
 
 const original = globalThis.fetch
 afterEach(() => { globalThis.fetch = original; clearCsrfToken() })
@@ -109,7 +109,7 @@ test('login validation only checks empty values and never trims the password', (
 
 test('next path only allows same-site paths', () => {
   assert.equal(safeNextPath('/products/1'), '/products/1')
-  for (const next of [null, '', 'https://evil.com', '//evil.com', '/\\evil.com', 'products', '/login', '/signup?x=1']) {
+  for (const next of [null, '', 'https://evil.com', '//evil.com', '/\\evil.com', '/\t/evil.com', '/\n/evil.com', '/a\\b', 'products', '/login', '/signup?x=1']) {
     assert.equal(safeNextPath(next), '/', String(next))
   }
 })
@@ -135,5 +135,35 @@ test('a late /me response that started before login cannot overwrite the new acc
   finishStale() // 로그아웃 전에 보낸 조회가 이전 회원으로 도착
   await stale
   assert.equal(client.getQueryData(memberQueryKey), null)
+  client.clear()
+})
+
+test('network or server failure is treated as unclear, client errors are not', () => {
+  const api = (status, code) => new ApiError(status, { code, message: 'x', fieldErrors: [] })
+  assert.equal(isUnclearResult(api(0, 'NETWORK_ERROR')), true)
+  assert.equal(isUnclearResult(api(500, 'INTERNAL_ERROR')), true)
+  assert.equal(isUnclearResult(api(502, 'HTTP_ERROR')), true)
+  assert.equal(isUnclearResult(new TypeError('x')), true)
+  for (const [status, code] of [[400, 'VALIDATION_FAILED'], [401, 'INVALID_CREDENTIALS'], [403, 'CSRF_INVALID'], [409, 'EMAIL_ALREADY_EXISTS']]) {
+    assert.equal(isUnclearResult(api(status, code)), false, code)
+  }
+})
+
+test('recheck after an unclear result drops the CSRF token and marks the session for a fresh check without replaying the command', async () => {
+  let csrfCalls = 0
+  const commands = []
+  globalThis.fetch = async (url, options) => {
+    if (url === '/api/auth/csrf') { csrfCalls++; return json({ token: `csrf-${csrfCalls}`, headerName: 'X-CSRF-TOKEN' }) }
+    commands.push(`${options.method} ${url}`)
+    return json({})
+  }
+  await apiRequest('/x', { method: 'POST' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(memberQueryKey, member)
+  await recheckSession(client)
+  assert.equal(client.getQueryState(memberQueryKey).isInvalidated, true, '다음 화면 표시 때 서버에 다시 확인한다')
+  assert.deepEqual(commands, ['POST /api/x'], '로그인·로그아웃 요청을 다시 보내지 않는다')
+  await apiRequest('/x', { method: 'POST' })
+  assert.equal(csrfCalls, 2, '버린 토큰 대신 새 CSRF 토큰을 받는다')
   client.clear()
 })

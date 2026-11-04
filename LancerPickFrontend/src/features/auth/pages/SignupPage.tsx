@@ -110,6 +110,8 @@ function serverFieldErrors(error: Error): SignupErrors {
 
 function signupErrorMessage(error: Error) {
   if (!(error instanceof ApiError)) return '가입하지 못했어요. 다시 시도해 주세요.'
+  // 가입이 이미 처리됐을 수 있다. 다시 누르면 409가 날 수 있어 로그인을 먼저 안내한다.
+  if (error.status === 0 || error.status >= 500) return '가입 결과를 확인하지 못했어요. 가입됐을 수 있으니 먼저 같은 이메일로 로그인해 보세요.'
   if (error.code === 'VALIDATION_FAILED') return '입력값을 다시 확인해 주세요.'
   if (error.code === 'CSRF_INVALID') return '요청 정보가 만료됐어요. 다시 시도해 주세요.'
   return error.message
