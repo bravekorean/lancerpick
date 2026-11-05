@@ -2,9 +2,13 @@
 
 2026-11-05 후속 로컬 `feature/full-funding-payments`: main `2fec099`(#87)의 계약/PDF·V7 기반에 **주문 결제 금액만 차감·보관, 수동 구매 확정 시 판매자 구매 적립금 지급, 판매자 승인 전액 환불**과 주문 상세 대금 표시를 연결했다. main 9e19f77 통합·컨벤션 정리 후 백엔드 clean build 782건·프런트 172건/lint/build 통과. 자동 확정 타이머·관리자 승인·신규 생성 활성화·실제 V3 전체 브라우저 확인은 남았다. [범위·검증](full-funding-payment.md). 아래 미연결 문구·검사 수는 해당 시점의 기록이다.
 
+## V3 납품·수정 요청·재납품(E6 앞부분) — 2026-11-05
+
+main 반영(#93, `feature/v3-delivery-revision`, 정은찬): CONTRACT_V3 결제 후 금액이 움직이지 않는 명령을 열었다. 판매자 납품·재납품(작업 중·수정 중), 구매자 수정 요청(검수 대기, 주문당 1회)이 기존 규칙·이력·알림 그대로 동작하며 재납품 기한은 수정 요청 시각+원래 소요일이다. V3 상태별 `allowedActions`에 `DELIVER`·`REQUEST_REVISION`을 추가했고 화면은 이 값으로 기존 납품·수정 폼을 보여 준다. V3 명령은 주문 잠금 아래 전액 보관(`order_funds` HELD)을 확인하며 없으면 무결성 오류다(읽기 경계 `payment/service/OrderFundsReader` 추가, 황준범 영역). 구매 확정·결제 후 취소·취소 요청과 V2 결제 후 명령은 계속 `ORDER_POLICY_NOT_READY`다. V3 전액 결제(J4)가 없어 결제 후 상태는 테스트 fixture로 만들었고, 생성 스위치는 false라 실제 화면에는 V3 주문이 생기지 않는다. 검수 타이머 취소는 E7에서 연결한다. DB 변경 없음. 병합 전 브랜치에서 백엔드 `clean build` 775건 통과. 브라우저 확인은 하지 않았다.
+
 ## 계약 주문 수락 경로 단일화 — 2026-11-05
 
-`fix/contract-accept-single-path`(정은찬, PR 전): 같은 수락을 하던 두 경로 중 계약 전용 `POST /api/orders/{orderId}/contract/accept`와 계약 영역의 "계약 주문 수락" 버튼을 삭제했다. 판매자가 계약 주문(REQUESTED)을 볼 때 수락 버튼이 두 개 나오던 문제가 사라지고, 수락은 주문 상세의 공통 버튼(`allowedActions`의 `ACCEPT`, `POST /api/orders/{id}/accept`) 하나로 한다. 상태 전환·이력·아웃박스는 같은 `OrderDecisionService.accept`라 바뀌지 않는다. 함께 V3 기준으로 주석(`NewOrderPolicy`, `OrderAllowedActions`)과 계약 주문 결제 차단 메시지(`CONTRACT_PAYMENT_NOT_READY`, 코드 유지·문구에서 "분할 결제" 제거)를 고쳤다. DB 변경 없음. 검증 결과는 PR에 기록한다. 브라우저 확인은 하지 않았다.
+main 반영(#92, `fix/contract-accept-single-path`, 정은찬): 같은 수락을 하던 두 경로 중 계약 전용 `POST /api/orders/{orderId}/contract/accept`와 계약 영역의 "계약 주문 수락" 버튼을 삭제했다. 판매자가 계약 주문(REQUESTED)을 볼 때 수락 버튼이 두 개 나오던 문제가 사라지고, 수락은 주문 상세의 공통 버튼(`allowedActions`의 `ACCEPT`, `POST /api/orders/{id}/accept`) 하나로 한다. 상태 전환·이력·아웃박스는 같은 `OrderDecisionService.accept`라 바뀌지 않는다. 함께 V3 기준으로 주석(`NewOrderPolicy`, `OrderAllowedActions`)과 계약 주문 결제 차단 메시지(`CONTRACT_PAYMENT_NOT_READY`, 코드 유지·문구에서 "분할 결제" 제거)를 고쳤다. DB 변경 없음. 병합 전 브랜치에서 백엔드 `clean build` 771건·프런트 검사 통과. 브라우저 확인은 하지 않았다.
 
 ## 메일 발송 인프라(C3) — 2026-11-05
 
@@ -34,7 +38,7 @@ main 반영(#84, `b08e031`, 김창재): 로그인 상태 비밀번호 변경 API
 
 2차 로컬 작업: V2 주문 상세에 PDF 전용 영역(상태·버전·원문/특약·판매자 생성/재시도·양측 다운로드)을 연결했다. 공통 바이너리 요청·파일 해시 대조·계정 변경/화면 종료 시 다운로드 중단을 추가했다. 서명/초안 명령과 주문 상태 전환은 E4/E5 후속이다. V2 생성 플래그는 기본 false를 유지한다. [2차 범위](contract-pdf-delivery.md)를 따른다.
 
-PDF 후속 `feature/contract-pdf-delivery`(main `1e10d78`에서 분기): 한글 PDF 생성·FAILED/기한 초과 재시도·당사자 버전별 조회/다운로드·파일 해시 검증 API를 추가했다. [범위·검증 기록](contract-pdf-delivery.md)을 따른다. 신규 V2 주문 생성·계약 화면·분할 결제·전체 거래는 아직 별도 연결 대상이다. 이번 변경은 미커밋 로컬 작업이며 원격 반영과 구분한다.
+PDF 후속 `feature/contract-pdf-delivery`(main `1e10d78`에서 분기): 한글 PDF 생성·FAILED/기한 초과 재시도·당사자 버전별 조회/다운로드·파일 해시 검증 API를 추가했다. [범위·검증 기록](contract-pdf-delivery.md)을 따른다. 신규 V2 주문 생성·계약 화면·분할 결제·전체 거래는 아직 별도 연결 대상이다. (당시 미커밋 로컬 작업 기록. 이후 main `2fec099`에 반영됐다.)
 
 ## 주문 알림·아웃박스 — 2026-11-05
 

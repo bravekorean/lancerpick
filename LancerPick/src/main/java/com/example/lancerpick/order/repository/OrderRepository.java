@@ -33,6 +33,13 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     return order;
   }
 
+  default Optional<Order> findForFulfillment(long orderId, long memberId) {
+    var order = findForDecision(orderId, memberId);
+    order.ifPresent(
+        value -> TradePolicyVersion.requireFulfillmentCommand(value.getPolicyVersion()));
+    return order;
+  }
+
   default Optional<Order> findForFundedOrLegacyDecision(long orderId, long memberId) {
     var order = findForDecision(orderId, memberId);
     order.ifPresent(value -> {

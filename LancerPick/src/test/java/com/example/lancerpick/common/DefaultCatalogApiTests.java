@@ -82,6 +82,8 @@ class DefaultCatalogApiTests extends CommonApiTests {
     @MockitoBean
     com.example.lancerpick.payment.repository.PaymentRepository paymentRepository;
     @MockitoBean
+    com.example.lancerpick.payment.repository.OrderFundsRepository orderFundsRepository;
+    @MockitoBean
     OrderRevisionService orderRevisionService;
     @MockitoBean
     OrderDeliveryService orderDeliveryService;
