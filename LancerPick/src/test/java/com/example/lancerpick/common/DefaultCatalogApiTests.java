@@ -29,7 +29,8 @@ import com.example.lancerpick.wallet.service.TopupApprovalTransactions;
         "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
                 + "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,"
                 + "org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration,"
-                + "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration"
+                + "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration",
+        "lancerpick.notifications.dispatch-enabled=false"
 })
 class DefaultCatalogApiTests extends CommonApiTests {
     @MockitoBean
@@ -37,6 +38,14 @@ class DefaultCatalogApiTests extends CommonApiTests {
     // This HTTP-only context excludes JPA; contract persistence is tested against MySQL separately.
     @MockitoBean
     com.example.lancerpick.contract.service.OrderContractService orderContractService;
+    @MockitoBean
+    com.example.lancerpick.notification.service.OrderEventPublisher orderEventPublisher;
+    @MockitoBean
+    com.example.lancerpick.notification.service.OutboxDispatcher outboxDispatcher;
+    @MockitoBean
+    com.example.lancerpick.notification.service.NotificationService notificationService;
+    @MockitoBean
+    com.example.lancerpick.notification.repository.NotificationQueries notificationQueries;
     @MockitoBean
     com.example.lancerpick.review.service.ReviewService reviewService;
     @MockitoBean
