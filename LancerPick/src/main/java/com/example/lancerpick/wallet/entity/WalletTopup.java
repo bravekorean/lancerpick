@@ -57,6 +57,15 @@ public class WalletTopup {
     @Column(name = "completed_at", columnDefinition = "DATETIME(6)")
     private Instant completedAt;
 
+    @Column(name = "recovery_attempt_count", nullable = false)
+    private int recoveryAttemptCount;
+    @Column(name = "next_recovery_at", columnDefinition = "DATETIME(6)")
+    private Instant nextRecoveryAt;
+    @Column(name = "recovery_lease_token", columnDefinition = "CHAR(36)")
+    private String recoveryLeaseToken;
+    @Column(name = "recovery_lease_until", columnDefinition = "DATETIME(6)")
+    private Instant recoveryLeaseUntil;
+
     protected WalletTopup() {}
 
     /** 서비스에서 검증한 금액·서버 생성 식별자·UTC 시각만 전달한다. */

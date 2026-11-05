@@ -42,6 +42,35 @@ class OrderContractIntegrationTests {
   @Autowired JdbcTemplate jdbc;
   @Autowired EntityManager em;
   @Autowired Clock clock;
+  @Autowired com.example.lancerpick.order.service.OrderQueryService queries;
+  @Autowired com.example.lancerpick.order.service.OrderCancellationService cancellations;
+  @Autowired com.example.lancerpick.order.service.OrderConfirmationService confirmations;
+  @Autowired com.example.lancerpick.order.service.OrderDecisionService decisions;
+
+  @Test
+  void contractOrderReportsPolicyAndBlocksLegacyMutations() {
+    var detail = queries.detail(buyer, Long.toString(orderId));
+    assertThat(detail.policyVersion()).isEqualTo("CONTRACT_V2");
+    assertThat(detail.allowedActions()).isEmpty();
+    assertThat(
+            queries
+                .list(buyer, com.example.lancerpick.order.dto.OrderSide.BUYER, null, 0, 20)
+                .items())
+        .allSatisfy(row -> assertThat(row.policyVersion()).isEqualTo("CONTRACT_V2"));
+    for (Runnable command :
+        List.<Runnable>of(
+            () -> cancellations.cancel(seller, Long.toString(orderId), "cancel"),
+            () -> confirmations.confirm(buyer, Long.toString(orderId)),
+            () -> decisions.accept(seller, Long.toString(orderId)))) {
+      assertThatThrownBy(command::run)
+          .isInstanceOfSatisfying(
+              BusinessException.class,
+              error -> assertThat(error.code()).isEqualTo("ORDER_POLICY_NOT_READY"));
+    }
+    assertThat(orders.findById(orderId).orElseThrow().getStatus())
+        .isEqualTo(OrderStatus.AWAITING_PAYMENT);
+  }
+
   @Autowired PlatformTransactionManager transactionManager;
 
   @AfterEach

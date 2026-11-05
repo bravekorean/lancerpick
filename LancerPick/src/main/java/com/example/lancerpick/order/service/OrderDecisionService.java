@@ -60,7 +60,7 @@ public class OrderDecisionService {
     }
     var order =
         orders
-            .findForDecision(orderId, memberId)
+            .findForLegacyDecision(orderId, memberId)
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
@@ -82,7 +82,7 @@ public class OrderDecisionService {
     var detail = details.forParticipant(orderId, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.status(),
+            detail.policyVersion(), detail.status(),
             false,
             detail.revisionRequest(),
             detail.cancellationRequests(),

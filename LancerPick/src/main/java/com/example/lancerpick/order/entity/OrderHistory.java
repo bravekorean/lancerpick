@@ -28,8 +28,18 @@ public class OrderHistory {
     @Column(name = "order_id", nullable = false, updatable = false)
     private Long orderId;
 
-    @Column(name = "actor_id", nullable = false, updatable = false)
+    @Column(name = "actor_id", updatable = false)
     private Long actorId;
+
+    @Column(name = "actor_type", nullable = false, updatable = false, length = 10)
+    private String actorType = "MEMBER";
+
+    @Column(name = "source_event_key", updatable = false, length = 100)
+    private String sourceEventKey;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "details", updatable = false, columnDefinition = "JSON")
+    private String details;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)

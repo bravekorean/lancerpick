@@ -140,7 +140,9 @@ public class OrderContractService {
         orders
             .findForDecision(orderId, memberId)
             .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
-    if (!"CONTRACT_V2".equals(order.getPolicyVersion())
+    if (!com.example.lancerpick.common.policy.TradePolicyVersion.CONTRACT_V2
+            .name()
+            .equals(order.getPolicyVersion())
         || order.getStatus() != OrderStatus.AWAITING_PAYMENT
         || order.getAcceptedAt() == null
         || order.getPaidAt() != null

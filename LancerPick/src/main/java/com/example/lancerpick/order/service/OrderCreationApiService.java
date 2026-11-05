@@ -26,7 +26,7 @@ public class OrderCreationApiService {
     var detail = details.forParticipant(result.orderId(), buyerId);
     var actions =
         OrderAllowedActions.actions(
-            detail.status(),
+            detail.policyVersion(), detail.status(),
             detail.buyer().id().equals(Long.toString(buyerId)),
             detail.revisionRequest(),
             detail.cancellationRequests(),

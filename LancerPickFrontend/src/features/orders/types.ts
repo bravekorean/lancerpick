@@ -1,9 +1,12 @@
 // API 명세에 맞춘 요청·응답 타입을 구현할 때 정의합니다.
+export type TradePolicyVersion = 'LEGACY_V1' | 'CONTRACT_V2'
 export interface OrderSummary {
+  policyVersion: TradePolicyVersion
   id: string; status: string; productTitle: string; priceAmount: number
   counterparty: { id: string; displayName: string }; createdAt: string; currentDueAt: string | null
 }
 export interface OrderDetail {
+  policyVersion: TradePolicyVersion
   productId: string
   cancellationRequests: CancellationRequest[]
   id: string; status: string; priceAmount: number; requirements: string

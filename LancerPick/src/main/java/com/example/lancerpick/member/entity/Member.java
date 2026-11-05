@@ -39,6 +39,13 @@ public class Member {
     @Column(name = "role", nullable = false, length = 10)
     private MemberRole role;
 
+    @JdbcTypeCode(SqlTypes.LOCAL_DATE_TIME)
+    @Column(name = "email_verified_at")
+    private LocalDateTime emailVerifiedAt;
+
+    @Column(name = "auth_version", nullable = false)
+    private long authVersion;
+
     // UTC LocalDateTime을 JVM 기본 시간대로 재해석하지 않고 DATETIME에 직접 저장한다.
     @JdbcTypeCode(SqlTypes.LOCAL_DATE_TIME)
     @Column(name = "created_at", nullable = false)

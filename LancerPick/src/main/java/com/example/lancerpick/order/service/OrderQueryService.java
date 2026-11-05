@@ -61,7 +61,7 @@ public class OrderQueryService {
     var detail = details.forParticipant(orderId, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.status(),
+            detail.policyVersion(), detail.status(),
             detail.buyer().id().equals(Long.toString(memberId)),
             detail.revisionRequest(),
             detail.cancellationRequests(),

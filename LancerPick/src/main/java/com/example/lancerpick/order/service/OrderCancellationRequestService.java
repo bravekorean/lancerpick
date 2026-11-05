@@ -131,7 +131,7 @@ public class OrderCancellationRequestService {
       throw new BusinessException(
           HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.");
     return orders
-        .findForDecision(orderId, memberId)
+        .findForLegacyDecision(orderId, memberId)
         .orElseThrow(OrderCancellationRequestService::notFound);
   }
 
@@ -145,7 +145,7 @@ public class OrderCancellationRequestService {
         request.response(),
         detail.withAllowedActions(
             OrderAllowedActions.actions(
-                detail.status(),
+                detail.policyVersion(), detail.status(),
                 order.getBuyerId().equals(memberId),
                 detail.revisionRequest(),
                 detail.cancellationRequests(),
