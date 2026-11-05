@@ -163,8 +163,16 @@ public class OrderContractService {
         signatures.findByContractIdOrderByIdAsc(c.getId()).stream()
             .map(s ->
                 new ContractResponse.Signature(
-                    Long.toString(s.getMemberId()), s.getPartyRole(), s.getSignedAt()))
+                    Long.toString(s.getMemberId()),
+                    s.getPartyRole(),
+                    s.getSignedAt().atOffset(ZoneOffset.UTC)))
             .toList());
+  }
+
+  /** Internal response assembly. Authorization belongs to the calling transaction service. */
+  @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+  public ContractResponse describe(OrderContract contract) {
+    return response(contract);
   }
 
   private LocalDateTime now() {
