@@ -124,6 +124,7 @@ public class OrderContract {
   }
 
   public void supersede(LocalDateTime at) {
+    requireMonotonicTime(at);
     if ("SIGNED".equals(status) || "SUPERSEDED".equals(status))
       throw new IllegalStateException("Contract cannot be replaced");
     status = "SUPERSEDED";
@@ -133,6 +134,7 @@ public class OrderContract {
 
   public void startGeneration(LocalDateTime at) {
     if (!"DRAFT".equals(status)) throw new IllegalStateException("Not a draft");
+    requireMonotonicTime(at);
     status = "GENERATING";
     updatedAt = at;
   }
@@ -158,6 +160,7 @@ public class OrderContract {
         || sha256.length != 32) {
       throw new IllegalStateException("Invalid renderer completion");
     }
+    requireMonotonicTime(at);
     fileStorageKey = storageKey;
     fileBackend = backend;
     fileSize = bytes;
@@ -168,6 +171,7 @@ public class OrderContract {
 
   public void signComplete(LocalDateTime at) {
     if (!"READY".equals(status)) throw new IllegalStateException("Not ready");
+    requireMonotonicTime(at);
     status = "SIGNED";
     signedAt = at;
     updatedAt = at;
@@ -175,6 +179,12 @@ public class OrderContract {
 
   public boolean matches(byte[] hash) {
     return MessageDigest.isEqual(contentHash, hash);
+  }
+
+  private void requireMonotonicTime(LocalDateTime at) {
+    if (at == null || at.isBefore(updatedAt)) {
+      throw new IllegalArgumentException("Contract event time cannot be null or go backwards");
+    }
   }
 
   public byte[] getContentHash() {

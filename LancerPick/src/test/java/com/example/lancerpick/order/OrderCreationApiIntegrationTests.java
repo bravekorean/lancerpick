@@ -151,8 +151,8 @@ class OrderCreationApiIntegrationTests {
         insert("INSERT INTO payments(order_id,amount,fee_rate_bps,status,paid_at) VALUES (?,100000,1000,'PAID',?)", id, AT);
         insert("INSERT INTO reviews(order_id,rating,content,created_at) VALUES (?,5,NULL,?)", id, AT);
         insert("""
-                INSERT INTO cancellation_requests(order_id,requested_by,request_key,reason,status,requested_at,resolved_at,resolved_by)
-                VALUES (?,?,?,'cancel','REJECTED',?,?,?)
+                INSERT INTO cancellation_requests(order_id,requested_by,request_key,reason,status,requested_at,resolved_at,resolved_by,resolution_source)
+                VALUES (?,?,?,'cancel','REJECTED',?,?,?,'SELLER')
                 """, id, buyer, UUID.randomUUID().toString(), AT, AT, seller);
         send(body(), buyer).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"))

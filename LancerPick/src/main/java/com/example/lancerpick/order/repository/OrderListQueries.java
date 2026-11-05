@@ -25,7 +25,7 @@ public class OrderListQueries {
                     var order=tuple.get(o);var snapshot=tuple.get(s);var other=tuple.get(m);var revision=tuple.get(r);
                     if(snapshot==null)throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,"DATA_INTEGRITY_ERROR","주문 조건 기록을 확인해야 합니다.");
                     LocalDateTime due=order.getPaidAt()==null?null:revision!=null?revision.getDueAt():order.getDueAt();
-                    return new OrderSummaryResponse(order.getId().toString(),order.getStatus().name(),snapshot.getProductTitleSnapshot(),order.getPriceAmount(),new Participant(other.getId().toString(),other.getDisplayName()),order.getCreatedAt().atOffset(ZoneOffset.UTC),due==null?null:due.atOffset(ZoneOffset.UTC));
+                    return new OrderSummaryResponse(order.getId().toString(),order.getStatus().name(),snapshot.getProductTitleSnapshot(),order.getPriceAmount(),new Participant(other.getId().toString(),other.getDisplayName()),order.getCreatedAt().atOffset(ZoneOffset.UTC),due==null?null:due.atOffset(ZoneOffset.UTC),order.getPolicyVersion());
                 }).toList();
     }
 }

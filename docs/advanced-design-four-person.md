@@ -178,10 +178,11 @@ PDF 생성 중에는 안내·재시도 상태를 표시한다. 생성 실패를 
 
 | 대상 | 주요 데이터·제약 |
 | --- | --- |
-| `order_contracts` | order_id, version, template_version, 적용 정책, 저장된 계약 데이터, 상태, file_id, hash; 주문+버전 UNIQUE |
-| `contract_confirmations` | contract_id, member_id, BUYER/SELLER 역할, 확인 시각·확인한 해시; 계약+역할 UNIQUE |
-| `contract_notices` | 계약 참조, 결제/수정 이벤트 ID, 확정 납기, 생성 시각; 원인 이벤트 UNIQUE |
-| 비공개 파일 메타데이터 | 저장 키·크기·종류·해시·생성/완료 상태·생성 요청 ID |
+| `order_contracts` | order_id, version, template_version, 불변 내용·특약·상태·해시·현재 버전 슬롯, 파일 저장 키·크기·해시·생성 요청 키 |
+| `contract_signatures` | contract_id, member_id, BUYER/SELLER 역할, 내용/PDF 해시·서명 시각; 계약+역할 UNIQUE |
+| `order_histories`의 기한 통지 | details에 계약 버전·납품 회차·기준/납기 시각, source_event_key로 중복 방지 |
+
+별도 confirmations/notices/공통 파일 테이블은 만들지 않는다. 정확한 컬럼은 실행 Flyway와 DB 설계를 따른다.
 
 경로 제안: `GET /api/orders/{id}/contract`, `POST /api/orders/{id}/contract/confirmations`, `GET /api/orders/{id}/contract/file`. 상세 경로·DTO·ERD는 구현 PR에서 확정한다.
 
@@ -202,7 +203,7 @@ PDF 생성 중에는 안내·재시도 상태를 표시한다. 생성 실패를 
 | 항목 | 확정 정책 |
 | --- | --- |
 | 선금 | 계약 총액의 50%, 원 미만 버림 |
-| 잔금 | 계약 총액 − 선금. 예: 총액 9,999원 → 선금 4,999원·잔금 5,000원 |
+| 잔금 | 계약 총액 − 선금. 예: 총액 10,001원 → 선금 5,000원·잔금 5,001원 |
 | 정상 종료 | 잔금 차감·결제 기록·구매 확정·정산 생성을 한 트랜잭션으로 처리 |
 | 정상 정산 | 완료 후 총 결제액 기준 일괄 정산, 기존 수수료 10%·원 미만 버림 |
 | 판매자 종료 | 잔금 결제 전 판매자 단독 종료 불가, 검수 무응답 시 응답 타이머 시작만 허용 |

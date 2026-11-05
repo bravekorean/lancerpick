@@ -56,7 +56,7 @@ public class OrderConfirmationService {
           HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.");
     var order =
         orders
-            .findForDecision(orderId, memberId)
+            .findForLegacyDecision(orderId, memberId)
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
@@ -92,7 +92,7 @@ public class OrderConfirmationService {
     var detail = details.forParticipant(orderId, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.status(),
+            detail.policyVersion(), detail.status(),
             true,
             detail.revisionRequest(),
             detail.cancellationRequests(),

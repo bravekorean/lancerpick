@@ -69,7 +69,7 @@ public class OrderPaymentService {
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
     if (!order.getBuyerId().equals(memberId))
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "구매자만 결제할 수 있습니다.");
-    if (!"LEGACY_V1".equals(order.getPolicyVersion())) {
+    if (!com.example.lancerpick.common.policy.TradePolicyVersion.LEGACY_V1.name().equals(order.getPolicyVersion())) {
       throw new BusinessException(HttpStatus.CONFLICT, "CONTRACT_PAYMENT_NOT_READY", "계약 주문의 분할 결제 연결이 아직 준비되지 않았습니다.");
     }
     var existing = payments.findByOrderId(orderId);
@@ -123,7 +123,7 @@ public class OrderPaymentService {
     var detail = details.forParticipant(id, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.status(),
+            detail.policyVersion(), detail.status(),
             true,
             detail.revisionRequest(),
             detail.cancellationRequests(),

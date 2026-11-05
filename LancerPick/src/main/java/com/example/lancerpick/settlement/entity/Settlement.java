@@ -34,6 +34,9 @@ public class Settlement {
   @Column(name = "seller_amount", nullable = false)
   private long sellerAmount;
 
+  @Column(name = "settlement_type", nullable = false, length = 32)
+  private String settlementType = "NORMAL";
+
   @JdbcTypeCode(SqlTypes.LOCAL_DATE_TIME)
   @Column(name = "created_at", nullable = false)
   private LocalDateTime createdAt;

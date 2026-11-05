@@ -1,5 +1,7 @@
 # 랜서픽 MVP ERD 설계 v1.0
 
+2026-11-05 후속: 아래 그림·본문은 V1 MVP 기준으로 보존한다. main c24f37d에는 V3/V4와 계약/서명 2개가 반영돼 누적 19개다. 로컬 후속 V5/V6는 목표 신규 12개 전체·누적 29개를 준비하며 [DB 설계](advanced-db-design.md)·[전체 업무 스키마](advanced-schema-foundation.md)가 고도화 관계/제약의 기준이다. 이 문서의 기존 16/17개 설명을 현재 고도화 총수로 해석하지 않는다.
+
 구현 대조 2026-11-03: V1 기본 16개와 V2 충전 확장을 적용하면 누적 17개 테이블이다. 현재 Entity·운영 JPA/QueryDSL과 V1/V2의 validate·회귀 검증은 [현황표](current-status.md)·[저장소 전환](project-persistence.md)을 따른다. 아래 기본 ERD·이미지는 V1이며, 추가 마이그레이션이나 이미지 재생성은 이번 문서 최신화에서 수행하지 않는다.
 
 2026-11-02 확장 착수: 사용자 요청으로 토스 테스트 충전의 [V2 저장 구조](wallet-topup-schema.md)를 별도 추가한다. 아래 기본 논리 ERD·이미지는 V1 MVP 16개 테이블 기준이다. V2 적용 시 wallet_topups 1개와 원장 topup_id 참조가 추가되며, 실제 승인·지급 기능 완료를 뜻하지 않는다.

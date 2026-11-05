@@ -16,7 +16,7 @@ public class Payment {
     @Column(name="amount", nullable=false)
     private long amount;
     @Column(name="order_policy_version", nullable=false, updatable=false, length=32)
-    private String orderPolicyVersion = "LEGACY_V1";
+    private String orderPolicyVersion = com.example.lancerpick.common.policy.TradePolicyVersion.LEGACY_V1.name();
     @Column(name="installment_type", nullable=false, updatable=false, length=16)
     private String installmentType = "FULL";
     @Column(name="refunded_amount", nullable=false)

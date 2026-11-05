@@ -147,7 +147,7 @@ class OrderRevisionApiIntegrationTests {
         long cancellation = insert("INSERT INTO cancellation_requests(order_id,requested_by,request_key,reason,requested_at) VALUES (?,?,?,'cancel',?)", order, buyer, UUID.randomUUID().toString(), AT);
         submit(buyer, valid()).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CANCELLATION_PENDING"));
         assertUnchanged();
-        jdbc.update("UPDATE cancellation_requests SET status='WITHDRAWN',resolved_at=requested_at,resolved_by=? WHERE id=?", buyer, cancellation);
+        jdbc.update("UPDATE cancellation_requests SET status='WITHDRAWN',resolved_at=requested_at,resolved_by=?,resolution_source='BUYER' WHERE id=?", buyer, cancellation);
         submit(buyer, valid()).andExpect(status().isOk());
     }
 

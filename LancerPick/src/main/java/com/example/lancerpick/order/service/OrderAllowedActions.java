@@ -9,11 +9,15 @@ final class OrderAllowedActions {
   private OrderAllowedActions() {}
 
   static List<String> actions(
+      String policyVersion,
       String status,
       boolean buyer,
       RevisionRequest revision,
       List<CancellationRequest> cancellations,
       Review review) {
+    if (!com.example.lancerpick.common.policy.TradePolicyVersion.LEGACY_V1
+        .name()
+        .equals(policyVersion)) return List.of();
     boolean pending = cancellations.stream().anyMatch(c -> "PENDING".equals(c.status()));
     var actions = new ArrayList<String>();
     if (buyer) {

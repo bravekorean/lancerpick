@@ -47,7 +47,18 @@ public class Order {
     private Long priceAmount;
 
     @Column(name = "policy_version", nullable = false, updatable = false, length = 32)
-    private String policyVersion = "LEGACY_V1";
+    private String policyVersion = com.example.lancerpick.common.policy.TradePolicyVersion.LEGACY_V1.name();
+
+    @JdbcTypeCode(SqlTypes.LOCAL_DATE_TIME)
+    @Column(name = "inspection_approved_at")
+    private LocalDateTime inspectionApprovedAt;
+
+    @JdbcTypeCode(SqlTypes.LOCAL_DATE_TIME)
+    @Column(name = "terminated_at")
+    private LocalDateTime terminatedAt;
+
+    @Column(name = "chat_sequence", nullable = false)
+    private long chatSequence;
 
     @Column(name = "duration_days_snapshot", nullable = false, updatable = false)
     private Integer durationDaysSnapshot;
