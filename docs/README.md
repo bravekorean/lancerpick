@@ -42,6 +42,8 @@
 
 ### 기준·설계
 
+- [계약서 PDF 생성·복구·당사자 다운로드](contract-pdf-delivery.md): 황준범 후속 구현. 생성 API·짧은 DB 트랜잭션·시도 키·비공개 보관·해시 검증. V2 생성/서명/화면 활성화와 구분.
+
 - [고도화 공통 기반 팀원 시작 안내](advanced-team-start.md): main V1~V6 제공 범위·담당별 착수 위치·후속 기능 활성화 순서.
 - [고도화 전체 업무 스키마 V5/V6](advanced-schema-foundation.md): 목표 신규 12개 테이블 준비, 누적 29개·기존 엔티티 호환·후속 분할 결제 전환 경계.
 - [설계 리뷰 후 정책 경계 보완](advanced-policy-boundary.md): 정책 DTO·허용 행동·기존 명령 차단·시각 검증과 남은 활성화 조건.
@@ -52,7 +54,7 @@
 - [고도화 DB 설계안 v0.3](advanced-db-design.md): 신규 업무 테이블 12개, 현재 계약·결제 회차·타이머·금액 분배 제약.
 - [고도화 상태·제약 명세](advanced-db-transitions.md): 관리자 타이머 해제·만료 우선·서비스 검증 책임·격리 DB 검사 기록.
 - [고도화 금융 기반 1차 구현](advanced-finance-foundation.md): V3·엔티티 확장·고정 비율 금액 계산, 기존 거래 유지와 후속 연결 범위.
-- [전자계약 버전·서명 기반](order-contract-foundation.md): V4 계약 테이블·내부 명령·문서 해시·양측 서명. PDF/화면/분할 결제 활성화는 후속.
+- [전자계약 버전·서명 기반](order-contract-foundation.md): V4 계약 테이블·내부 명령·문서 해시·양측 서명의 최초 기록. PDF 후속 구현은 위 문서, 계약 화면·분할 결제 활성화는 별도.
 - [고도화 DDL 후보](sql/advanced-db-candidate.sql): V1/V2 후속 검토 SQL. 실행 Flyway 자동 적용 대상이 아니며 서비스 호환 변경 후 단계별 적용.
 
 - [랜서픽 MVP 기획 명세서 v1.0](mvp-spec.md)

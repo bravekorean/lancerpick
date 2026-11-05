@@ -2,6 +2,8 @@
 
 ## 고도화 기반 후속 계약 — 2026-11-05
 
+PDF 후속 브랜치 `feature/contract-pdf-delivery`: 당사자 GET `/api/orders/{orderId}/contract`·GET `/api/orders/{orderId}/contract/file`(선택 `version`), 판매자 POST `/api/orders/{orderId}/contract/generate`(`{"version":1}`, CSRF) 추가. 성공/진행 중 200/202, 버전·상태 충돌 409, 생성/파일 검사 실패 503. 요청·응답·오류·권한·비공개 보관의 상세 계약은 [PDF API 문서](contract-pdf-delivery.md)를 따른다. 기존 V2 주문 생성/초안/서명 HTTP 활성화와 구분한다.
+
 기존 MVP API 경로·입력은 유지한다. main `1e10d78`에는 주문 목록 items와 상세/명령 응답의 `policyVersion: LEGACY_V1 | CONTRACT_V2` 및 아래 정책 경계가 반영됐다. 신규 주문 생성 API는 아직 LEGACY_V1만 생성한다(V2 생성 코드는 있으나 설정 `lancerpick.order.contract-v2-creation-enabled` 기본 false로 닫혀 있음, [주문 생성](order-creation.md) 8단계). 고도화 기능이 활성화됐다는 뜻이 아니다.
 
 | 응답/검사 | 정책 |
