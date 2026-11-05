@@ -8,9 +8,11 @@ PDF 후속 브랜치 `feature/contract-pdf-delivery`: 당사자 GET `/api/orders
 
 | 응답/검사 | 정책 |
 | --- | --- |
-| V2 허용 행동 | 전용 명령 연결 전까지 기존 `allowedActions`는 빈 배열. 기존 PAY·CANCEL·CONFIRM 버튼을 노출하지 않음 |
+| V2 허용 행동 | 선금 전 단계만 연결: `REQUESTED` 구매자 `CANCEL`·판매자 `ACCEPT`·`REJECT`, `AWAITING_CONTRACT`·`AWAITING_PAYMENT`(선금 대기) 양측 `CANCEL`. 그 밖의 상태는 빈 배열이며 PAY·CONFIRM 등 기존 버튼을 노출하지 않음 |
 | 기존 전액 결제 API | V2에 409 CONTRACT_PAYMENT_NOT_READY |
-| 기존 수락/거절·취소·취소 요청/처리·납품·수정·구매 확정 | V2에 409 ORDER_POLICY_NOT_READY. 해당 주문 당사자인지 확인한 뒤 적용 |
+| 기존 수락/거절 | V2도 처리. V2 수락은 `AWAITING_CONTRACT`로 전환하고 `ACCEPTED` 이력의 toStatus도 `AWAITING_CONTRACT` |
+| 기존 직접 취소 `POST /api/orders/{id}/cancel` | V2는 선금 전(`paidAt` 없음)만 처리: 구매자 `REQUESTED`, 양측 `AWAITING_CONTRACT`·`AWAITING_PAYMENT`. 금액 이동 없이 `CANCELLED`. 선금 후 V2는 409 ORDER_POLICY_NOT_READY |
+| 기존 취소 요청/처리·납품·수정·구매 확정 | V2에 409 ORDER_POLICY_NOT_READY. 해당 주문 당사자인지 확인한 뒤 적용 |
 | 조회 | 본인 V2 목록/상세는 정책 버전과 함께 조회 가능 |
 
 실제 V2 계약/분할 결제 경로는 별도 API 계약과 상태 전환 검증 후 추가한다. 내부 계약 서비스 prepare/sign을 현재 공개 HTTP API로 표현하지 않는다. [정책 경계 보완](advanced-policy-boundary.md)을 따른다.
@@ -62,8 +64,11 @@ fieldErrors의 각 항목은 field(요청 필드 경로 문자열), code(검증 
 | POST /auth/logout | 회원; 없음 | 204; 세션 무효화 |
 | GET /me | 회원 | Member |
 | PATCH /me | 회원; displayName | Member |
+| POST /me/password | 회원+CSRF; currentPassword,newPassword | 204; 현재 비밀번호 재확인 후 변경, auth_version 증가로 모든 세션 폐기. 자동 로그인 없음 |
 
 Member: id,email,displayName,role,hasSellerProfile. 이메일은 공백 제거·소문자 정규화 후 중복 확인한다. 가입 후 로그인 화면으로 이동하며 자동 로그인하지 않는다. 로그인·로그아웃 후 CSRF 토큰을 다시 획득한다.
+
+비밀번호 변경(2026-11-05 구현): 두 값 모두 정리하지 않는다. newPassword는 10절 비밀번호 원문 정책, currentPassword는 형식 검사 없음. 현재 비밀번호 불일치 400 CURRENT_PASSWORD_INCORRECT, 새 비밀번호가 현재와 같으면 400 PASSWORD_UNCHANGED, 폐기된 세션·동시 변경의 늦은 요청은 401 AUTHENTICATION_REQUIRED. 로그인 세션은 로그인 당시 auth_version을 갖고, DB 값과 다르면 다음 요청에서 폐기되어 비로그인으로 처리된다. 상세는 [로그인 문서](auth-login.md#비밀번호-변경세션-폐기--2026-11-05-featurepassword-change).
 
 ## 3 판매자와 상품 박소현
 
@@ -303,7 +308,7 @@ AdminProductSummary: id,title,priceAmount,durationDays,category(id,name),seller(
 
 | HTTP | 주요 코드 |
 | --- | --- |
-| 400 | VALIDATION_FAILED, TERMS_AGREEMENT_REQUIRED, INVALID_URL |
+| 400 | VALIDATION_FAILED, TERMS_AGREEMENT_REQUIRED, INVALID_URL, CURRENT_PASSWORD_INCORRECT, PASSWORD_UNCHANGED |
 | 401 | AUTHENTICATION_REQUIRED, INVALID_CREDENTIALS |
 | 403 / 404 | FORBIDDEN, CSRF_INVALID / RESOURCE_NOT_FOUND |
 | 409 | EMAIL_ALREADY_EXISTS, PRODUCT_VERSION_CONFLICT, PRODUCT_NOT_ORDERABLE, SELF_PURCHASE_NOT_ALLOWED, CONTRACT_MINIMUM_AMOUNT_NOT_MET(V2 생성 활성화 후에만) |
@@ -341,7 +346,7 @@ URL은 URI 파서로 https 스킴·호스트 존재·userinfo 부재를 확인�
 
 ### 비밀번호 원문 정책
 
-2026-11-02 김창재 결정(PR #14). 회원가입 입력에 적용한다.
+2026-11-02 김창재 결정(PR #14). 회원가입 입력과 비밀번호 변경의 새 비밀번호(2026-11-05)에 적용한다. 서버는 `PasswordRules.PATTERN` 한 곳의 상수를 쓴다.
 
 | 항목 | 기준 |
 | --- | --- |
