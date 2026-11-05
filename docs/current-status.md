@@ -1,5 +1,9 @@
 # 랜서픽 현재 구현·검증 현황
 
+## 비밀번호 재설정·요청 제한(K1 일부) — 2026-11-05
+
+`feature/password-recovery`(김창재, PR 전): 로그아웃 상태 비밀번호 재설정 API(`POST /api/auth/password-reset-requests` 202, `POST /api/auth/password-resets` 204)와 화면(`/password-reset/request`, `/password-reset#token=…`, 로그인 화면 링크)을 추가했다. V5 `account_challenges`(토큰 SHA-256 해시만 저장, 15분, 일회용)·`auth_request_limits`(이메일 HMAC, 최소 60초 간격·1시간 5회)를 사용하며 DB·라이브러리 변경은 없다. **실제 메일 발송은 아직 없다**: 발송 경계 `AccountMailSender`만 두었고 구현(Spring Mail·비동기 큐)은 C3 담당(정은찬·황준범)이다. C3 전에는 발급 기록이 `FAILED`(`MAIL_NOT_CONFIGURED`)로 남는다. 상세·한계·검증은 [로그인 문서](auth-login.md#비밀번호-재설정요청-제한--2026-11-05-featurepassword-recovery).
+
 2026-11-05 최신 변경: CONTRACT_V3 전액 보관 정책/V7/새 계약 본문과 계약 PDF·수락/초안/서명 HTTP API·주문 상세 계약 화면이 main `2fec099`에 반영됐다. 기존 V1/V2/서명 문서는 유지한다. 상세 정책·DB·미구현 금액 명령·활성화 조건은 [전액 보관 설계](full-funding-policy.md)를 따른다.
 
 ## V2 수락·계약 성립·선금 전 취소(E4) — 2026-11-05
