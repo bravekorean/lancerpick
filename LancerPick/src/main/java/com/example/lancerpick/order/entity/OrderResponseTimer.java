@@ -1,13 +1,17 @@
 package com.example.lancerpick.order.entity;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** Read-only guard until timer lifecycle integration; never writes a partial timer row. */
+/** 타이머 기능 연결 전 활성 타이머 존재 여부만 조회한다. 부분 데이터로 생성·변경하지 않는다. */
 @Entity
-@org.hibernate.annotations.Immutable
+@Immutable
 @Table(name = "order_response_timers")
 public class OrderResponseTimer {
   @Id private Long id;

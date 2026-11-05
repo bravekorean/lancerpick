@@ -5,18 +5,28 @@ import com.example.lancerpick.common.policy.TradePolicyVersion;
 import com.example.lancerpick.common.text.TextNormalizer;
 import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.OrderDetailResponse;
-import com.example.lancerpick.order.entity.*;
-import com.example.lancerpick.order.repository.*;
+import com.example.lancerpick.order.entity.OrderHistory;
+import com.example.lancerpick.order.entity.OrderHistoryAction;
+import com.example.lancerpick.order.entity.OrderStatus;
+import com.example.lancerpick.order.repository.CancellationRequestRepository;
+import com.example.lancerpick.order.repository.OrderDetailQueries;
+import com.example.lancerpick.order.repository.OrderHistoryRepository;
+import com.example.lancerpick.order.repository.OrderRepository;
 import com.example.lancerpick.payment.repository.PaymentRepository;
-import com.example.lancerpick.wallet.entity.*;
-import com.example.lancerpick.wallet.repository.*;
-import java.time.*;
+import com.example.lancerpick.wallet.entity.WalletEntry;
+import com.example.lancerpick.wallet.entity.WalletEntryType;
+import com.example.lancerpick.wallet.repository.WalletEntryRepository;
+import com.example.lancerpick.wallet.repository.WalletRepository;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Set;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.*;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 /** 직접 취소 진입점. 취소 요청 제출·승인·거절·철회 API는 주문 담당자의 후속 작업이다. */
 @Service
@@ -78,7 +88,9 @@ public class OrderCancellationService {
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
     if (TradePolicyVersion.CONTRACT_V3.name().equals(order.getPolicyVersion())
-        && order.getPaidAt() != null) return fullFunding.refund(memberId, orderId, reason);
+        && order.getPaidAt() != null) {
+      return fullFunding.refund(memberId, orderId, reason);
+    }
     // 계약 주문은 선금 전(금액 이동 없음)만 이 경로로 취소한다. 선금 후 취소·반환은 전용 경로(E6)다.
     if (!order.isContractPolicy() || order.getPaidAt() != null)
       TradePolicyVersion.requireLegacyCommand(order.getPolicyVersion());

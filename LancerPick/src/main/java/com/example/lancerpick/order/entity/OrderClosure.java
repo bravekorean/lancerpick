@@ -1,12 +1,19 @@
 package com.example.lancerpick.order.entity;
 
 import com.example.lancerpick.payment.service.FullFundingPolicy;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import lombok.Getter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-@lombok.Getter
+/** 주문 종료 시 결제 금액의 반환·판매자 지급·수수료 분배를 변경 불가능한 기록으로 보존한다. */
+@Getter
 @Entity
 @Table(name = "order_closures")
 public class OrderClosure {
@@ -56,31 +63,45 @@ public class OrderClosure {
 
   protected OrderClosure() {}
 
-  public static OrderClosure completed(long order, long buyer, long amount, LocalDateTime at) {
-    return create(order, buyer, null, FullFundingPolicy.completed(amount), at);
+  public static OrderClosure completed(
+      long orderId, long buyerId, long amount, LocalDateTime occurredAt) {
+    return create(orderId, buyerId, null, FullFundingPolicy.completed(amount), occurredAt);
   }
 
   public static OrderClosure refunded(
-      long order, long seller, long request, long amount, LocalDateTime at) {
-    return create(order, seller, request, FullFundingPolicy.cancelled(amount), at);
+      long orderId,
+      long sellerId,
+      long cancellationRequestId,
+      long amount,
+      LocalDateTime occurredAt) {
+    return create(
+        orderId, sellerId, cancellationRequestId, FullFundingPolicy.cancelled(amount), occurredAt);
   }
 
   private static OrderClosure create(
-      long order, long actor, Long request, FullFundingPolicy.Distribution d, LocalDateTime at) {
-    if (order < 1 || actor < 1 || at == null || (request != null && request < 1))
+      long orderId,
+      long actorId,
+      Long cancellationRequestId,
+      FullFundingPolicy.Distribution distribution,
+      LocalDateTime occurredAt) {
+    if (orderId < 1
+        || actorId < 1
+        || occurredAt == null
+        || (cancellationRequestId != null && cancellationRequestId < 1)) {
       throw new IllegalArgumentException("Invalid order closure");
-    var c = new OrderClosure();
-    c.orderId = order;
-    c.reason = request == null ? "COMPLETED" : "MUTUAL_CANCELLATION";
-    c.actorType = "MEMBER";
-    c.actorId = actor;
-    c.sourceCancellationRequestId = request;
-    c.paidAmount = d.fundedAmount();
-    c.buyerRefundAmount = d.buyerRefund();
-    c.feeAmount = d.fee();
-    c.sellerNetAmount = d.sellerPayout();
-    c.sellerGrossAmount = d.fee() + d.sellerPayout();
-    c.createdAt = at;
-    return c;
+    }
+    var closure = new OrderClosure();
+    closure.orderId = orderId;
+    closure.reason = cancellationRequestId == null ? "COMPLETED" : "MUTUAL_CANCELLATION";
+    closure.actorType = "MEMBER";
+    closure.actorId = actorId;
+    closure.sourceCancellationRequestId = cancellationRequestId;
+    closure.paidAmount = distribution.fundedAmount();
+    closure.buyerRefundAmount = distribution.buyerRefund();
+    closure.feeAmount = distribution.fee();
+    closure.sellerNetAmount = distribution.sellerPayout();
+    closure.sellerGrossAmount = distribution.fee() + distribution.sellerPayout();
+    closure.createdAt = occurredAt;
+    return closure;
   }
 }

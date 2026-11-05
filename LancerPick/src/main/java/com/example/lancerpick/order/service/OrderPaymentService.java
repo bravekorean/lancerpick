@@ -6,11 +6,14 @@ import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.OrderDetailResponse;
 import com.example.lancerpick.order.entity.OrderHistory;
 import com.example.lancerpick.order.entity.OrderStatus;
-import com.example.lancerpick.order.repository.*;
+import com.example.lancerpick.order.repository.OrderDetailQueries;
+import com.example.lancerpick.order.repository.OrderHistoryRepository;
+import com.example.lancerpick.order.repository.OrderRepository;
 import com.example.lancerpick.payment.repository.PaymentRepository;
 import com.example.lancerpick.wallet.entity.WalletEntry;
 import com.example.lancerpick.wallet.entity.WalletEntryType;
-import com.example.lancerpick.wallet.repository.*;
+import com.example.lancerpick.wallet.repository.WalletEntryRepository;
+import com.example.lancerpick.wallet.repository.WalletRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -75,8 +78,9 @@ public class OrderPaymentService {
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
-    if (TradePolicyVersion.CONTRACT_V3.name().equals(order.getPolicyVersion()))
+    if (TradePolicyVersion.CONTRACT_V3.name().equals(order.getPolicyVersion())) {
       return fullFunding.pay(memberId, orderId);
+    }
     if (!order.getBuyerId().equals(memberId))
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "구매자만 결제할 수 있습니다.");
     if (!TradePolicyVersion.LEGACY_V1.name().equals(order.getPolicyVersion())) {

@@ -2,342 +2,484 @@ package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.exception.BusinessException;
 import com.example.lancerpick.common.policy.TradePolicyVersion;
-import com.example.lancerpick.contract.repository.*;
+import com.example.lancerpick.contract.repository.ContractSignatureRepository;
+import com.example.lancerpick.contract.repository.OrderContractRepository;
 import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.OrderDetailResponse;
 import com.example.lancerpick.order.dto.OrderFundsResponse;
-import com.example.lancerpick.order.entity.*;
 import com.example.lancerpick.order.entity.Order;
-import com.example.lancerpick.order.repository.*;
-import com.example.lancerpick.payment.entity.*;
-import com.example.lancerpick.payment.repository.*;
+import com.example.lancerpick.order.entity.OrderClosure;
+import com.example.lancerpick.order.entity.OrderHistory;
+import com.example.lancerpick.order.entity.OrderHistoryAction;
+import com.example.lancerpick.order.entity.OrderStatus;
+import com.example.lancerpick.order.repository.CancellationRequestRepository;
+import com.example.lancerpick.order.repository.DeliveryRepository;
+import com.example.lancerpick.order.repository.OrderClosureRepository;
+import com.example.lancerpick.order.repository.OrderDetailQueries;
+import com.example.lancerpick.order.repository.OrderHistoryRepository;
+import com.example.lancerpick.order.repository.OrderRepository;
+import com.example.lancerpick.order.repository.OrderResponseTimerRepository;
+import com.example.lancerpick.order.repository.OrderTradeTermsRepository;
+import com.example.lancerpick.payment.entity.OrderFunds;
+import com.example.lancerpick.payment.entity.Payment;
+import com.example.lancerpick.payment.repository.OrderFundsRepository;
+import com.example.lancerpick.payment.repository.PaymentRepository;
 import com.example.lancerpick.payment.service.FullFundingPolicy;
 import com.example.lancerpick.settlement.entity.Settlement;
 import com.example.lancerpick.settlement.repository.SettlementRepository;
-import com.example.lancerpick.wallet.entity.*;
-import com.example.lancerpick.wallet.repository.*;
-import java.time.*;
+import com.example.lancerpick.wallet.entity.WalletEntry;
+import com.example.lancerpick.wallet.entity.WalletEntryType;
+import com.example.lancerpick.wallet.repository.WalletEntryRepository;
+import com.example.lancerpick.wallet.repository.WalletRepository;
+import java.security.MessageDigest;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.*;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
-/** Member share -> parent order write -> one affected wallet write. No external IO. */
+/**
+ * V3 주문의 결제 금액 보관·수동 구매 확정 지급·승인 환불을 조율한다. 실행 회원 공유 잠금 → 주문 배타 잠금 → 변경 대상 지갑 잠금 순서를 유지하며 외부 통신을
+ * 포함하지 않는다.
+ */
 @Service
 @Profile("!demo")
-@lombok.RequiredArgsConstructor
+@RequiredArgsConstructor
 @Transactional(isolation = Isolation.READ_COMMITTED)
 public class FullFundingService {
-  private final OrderRepository orders;
-  private final OrderTradeTermsRepository terms;
-  private final OrderContractRepository contracts;
-  private final ContractSignatureRepository signatures;
-  private final PaymentRepository payments;
-  private final OrderFundsRepository funds;
-  private final WalletRepository wallets;
-  private final WalletEntryRepository entries;
-  private final SettlementRepository settlements;
-  private final OrderClosureRepository closures;
-  private final CancellationRequestRepository cancellations;
-  private final DeliveryRepository deliveries;
-  private final OrderResponseTimerRepository timers;
-  private final OrderHistoryRepository histories;
-  private final OrderEventPublisher events;
-  private final OrderDetailQueries details;
+  private static final int FEE_RATE_BPS = 1_000;
+
+  private final OrderRepository orderRepository;
+  private final OrderTradeTermsRepository orderTradeTermsRepository;
+  private final OrderContractRepository orderContractRepository;
+  private final ContractSignatureRepository contractSignatureRepository;
+  private final PaymentRepository paymentRepository;
+  private final OrderFundsRepository orderFundsRepository;
+  private final WalletRepository walletRepository;
+  private final WalletEntryRepository walletEntryRepository;
+  private final SettlementRepository settlementRepository;
+  private final OrderClosureRepository orderClosureRepository;
+  private final CancellationRequestRepository cancellationRequestRepository;
+  private final DeliveryRepository deliveryRepository;
+  private final OrderResponseTimerRepository orderResponseTimerRepository;
+  private final OrderHistoryRepository orderHistoryRepository;
+  private final OrderEventPublisher orderEventPublisher;
+  private final OrderDetailQueries orderDetailQueries;
   private final Clock clock;
 
   @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-  public OrderFundsResponse summary(long actor, long id) {
-    var o =
-        orders
-            .findById(id)
-            .filter(order ->
-                (order.getBuyerId() == actor || order.getSellerId() == actor)
-                    && TradePolicyVersion.CONTRACT_V3.name().equals(order.getPolicyVersion()))
+  public OrderFundsResponse summary(long memberId, long orderId) {
+    var order =
+        orderRepository
+            .findById(orderId)
+            .filter(candidate ->
+                (candidate.getBuyerId() == memberId || candidate.getSellerId() == memberId)
+                    && TradePolicyVersion.CONTRACT_V3.name().equals(candidate.getPolicyVersion()))
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
-    if (payments.findByOrderId(id).isEmpty())
-      return new OrderFundsResponse("NOT_PAID", o.getPriceAmount(), 0, 0, null, null, null, null);
-    var p = payment(o);
-    var f = holding(o, p);
-    var c = closures.findByOrderId(id).orElse(null);
-    if (("HELD".equals(f.getStatus())) != (c == null)) throw integrity();
+    if (paymentRepository.findByOrderId(orderId).isEmpty()) {
+      return new OrderFundsResponse(
+          "NOT_PAID", order.getPriceAmount(), 0, 0, null, null, null, null);
+    }
+    var payment = requirePayment(order);
+    var orderFunds = requireOrderFunds(order, payment);
+    var closure = orderClosureRepository.findByOrderId(orderId).orElse(null);
+    if (("HELD".equals(orderFunds.getStatus())) != (closure == null)) {
+      throw integrityError();
+    }
     return new OrderFundsResponse(
-        f.getStatus(),
-        f.getAmount(),
-        f.getRemainingAmount(),
-        p.getRefundedAmount(),
-        c == null ? null : c.getFeeAmount(),
-        c == null ? null : c.getSellerNetAmount(),
-        p.getPaidAt().atOffset(ZoneOffset.UTC),
-        f.getResolvedAt() == null ? null : f.getResolvedAt().atOffset(ZoneOffset.UTC));
+        orderFunds.getStatus(),
+        orderFunds.getAmount(),
+        orderFunds.getRemainingAmount(),
+        payment.getRefundedAmount(),
+        closure == null ? null : closure.getFeeAmount(),
+        closure == null ? null : closure.getSellerNetAmount(),
+        payment.getPaidAt().atOffset(ZoneOffset.UTC),
+        orderFunds.getResolvedAt() == null
+            ? null
+            : orderFunds.getResolvedAt().atOffset(ZoneOffset.UTC));
   }
 
-  public OrderDetailResponse pay(long actor, long id) {
-    var o = lock(actor, id);
-    role(o.getBuyerId() == actor);
-    if (payments.findByOrderId(id).isPresent()) {
-      var p = payment(o);
-      var f = holding(o, p);
-      debit(o, p);
-      if ("REFUNDED".equals(p.status()))
+  public OrderDetailResponse pay(long memberId, long orderId) {
+    var order = lockOrder(memberId, orderId);
+    requireRole(order.getBuyerId() == memberId);
+    if (paymentRepository.findByOrderId(orderId).isPresent()) {
+      var payment = requirePayment(order);
+      var orderFunds = requireOrderFunds(order, payment);
+      requirePaymentEntry(order, payment);
+      if ("REFUNDED".equals(payment.status())) {
         throw conflict("PAYMENT_ALREADY_REFUNDED", "이미 반환된 결제입니다.");
+      }
       if (!Set.of(
               OrderStatus.IN_PROGRESS,
               OrderStatus.REVISION_IN_PROGRESS,
               OrderStatus.AWAITING_CONFIRMATION,
               OrderStatus.COMPLETED)
-          .contains(o.getStatus())) throw integrity();
-      if (o.getStatus() == OrderStatus.COMPLETED) verifyCompletion(o, p, f);
-      else if (!"HELD".equals(f.getStatus())
-          || closures.findByOrderId(id).isPresent()
-          || settlements.findByOrderId(id).isPresent()) throw integrity();
-      return response(o, actor);
+          .contains(order.getStatus())) {
+        throw integrityError();
+      }
+      if (order.getStatus() == OrderStatus.COMPLETED) {
+        requireCompletedRecords(order, payment, orderFunds);
+      } else if (!"HELD".equals(orderFunds.getStatus())
+          || orderClosureRepository.findByOrderId(orderId).isPresent()
+          || settlementRepository.findByOrderId(orderId).isPresent()) {
+        throw integrityError();
+      }
+      return orderResponse(order, memberId);
     }
-    if (o.getStatus() != OrderStatus.AWAITING_PAYMENT
-        || o.getPaidAt() != null
-        || funds.existsById(id)
-        || closures.findByOrderId(id).isPresent()
-        || settlements.findByOrderId(id).isPresent()) throw state();
-    requireSigned(o);
-    noPending(o);
-    noTimer(o);
-    var wallet = wallets.findByMemberIdForUpdate(actor).orElseThrow(FullFundingService::integrity);
-    var at = now();
-    o.pay(at);
-    wallet.debit(o.getPriceAmount(), at);
-    var p = payments.saveAndFlush(Payment.fullFunding(id, o.getPriceAmount(), at));
-    funds.saveAndFlush(OrderFunds.hold(id, p.id(), p.amount(), at));
-    entries.saveAndFlush(WalletEntry.payment(actor, p.id(), p.amount(), wallet.getBalance(), at));
-    events.publish(o, histories.saveAndFlush(OrderHistory.paid(id, actor, at)));
-    return response(o, actor);
-  }
-
-  public OrderDetailResponse confirm(long actor, long id) {
-    var o = lock(actor, id);
-    role(o.getBuyerId() == actor);
-    var p = payment(o);
-    var f = holding(o, p);
-    debit(o, p);
-    if (o.getStatus() == OrderStatus.COMPLETED) {
-      verifyCompletion(o, p, f);
-      return response(o, actor);
+    if (order.getStatus() != OrderStatus.AWAITING_PAYMENT
+        || order.getPaidAt() != null
+        || orderFundsRepository.existsById(orderId)
+        || orderClosureRepository.findByOrderId(orderId).isPresent()
+        || settlementRepository.findByOrderId(orderId).isPresent()) {
+      throw invalidState();
     }
-    if (o.getStatus() != OrderStatus.AWAITING_CONFIRMATION
-        || !"PAID".equals(p.status())
-        || !"HELD".equals(f.getStatus())) throw state();
-    noPending(o);
-    noTimer(o);
-    if (!deliveries.existsByOrderIdAndSequenceNo(id, 1)
-        || (deliveries.revisions(id) > 0 && !deliveries.existsByOrderIdAndSequenceNo(id, 2)))
-      throw integrity();
-    if (closures.findByOrderId(id).isPresent() || settlements.findByOrderId(id).isPresent())
-      throw integrity();
-    var d = FullFundingPolicy.completed(p.amount());
+    requireSignedContract(order);
+    requireNoPendingCancellation(order);
+    requireNoActiveTimer(order);
     var wallet =
-        wallets.findByMemberIdForUpdate(o.getSellerId()).orElseThrow(FullFundingService::integrity);
-    var at = now();
-    wallet.creditSettlement(d.sellerPayout(), at);
-    entries.saveAndFlush(
-        WalletEntry.sellerPayout(
-            o.getSellerId(), p.id(), d.sellerPayout(), wallet.getBalance(), at));
-    settlements.saveAndFlush(Settlement.create(id, p.amount(), 1000, at));
-    closures.saveAndFlush(OrderClosure.completed(id, actor, p.amount(), at));
-    f.release(at);
-    o.confirm(at);
-    orders.flush();
-    funds.flush();
-    events.publish(o, histories.saveAndFlush(OrderHistory.completed(id, actor, at)));
-    return response(o, actor);
+        walletRepository
+            .findByMemberIdForUpdate(memberId)
+            .orElseThrow(FullFundingService::integrityError);
+    var occurredAt = currentTime();
+    order.pay(occurredAt);
+    wallet.debit(order.getPriceAmount(), occurredAt);
+    var payment =
+        paymentRepository.saveAndFlush(
+            Payment.fullFunding(orderId, order.getPriceAmount(), occurredAt));
+    orderFundsRepository.saveAndFlush(
+        OrderFunds.hold(orderId, payment.id(), payment.amount(), occurredAt));
+    walletEntryRepository.saveAndFlush(
+        WalletEntry.payment(
+            memberId, payment.id(), payment.amount(), wallet.getBalance(), occurredAt));
+    orderEventPublisher.publish(
+        order,
+        orderHistoryRepository.saveAndFlush(OrderHistory.paid(orderId, memberId, occurredAt)));
+    return orderResponse(order, memberId);
   }
 
-  public OrderDetailResponse refund(long actor, long id, String reason) {
-    var o = lock(actor, id);
-    role(o.getSellerId() == actor);
-    var p = payment(o);
-    var f = holding(o, p);
-    debit(o, p);
-    if (o.getStatus() == OrderStatus.CANCELLED) {
-      var c = closures.findByOrderId(id).orElseThrow(FullFundingService::integrity);
-      if (!"REFUNDED".equals(p.status())
-          || !"REFUNDED".equals(f.getStatus())
-          || !"MUTUAL_CANCELLATION".equals(c.getReason())
-          || c.getBuyerRefundAmount() != p.amount()
-          || settlements.findByOrderId(id).isPresent()) throw integrity();
-      credit(o.getBuyerId(), p, WalletEntryType.REFUND, p.amount(), "REFUND:");
-      return response(o, actor);
+  public OrderDetailResponse confirm(long memberId, long orderId) {
+    var order = lockOrder(memberId, orderId);
+    requireRole(order.getBuyerId() == memberId);
+    var payment = requirePayment(order);
+    var orderFunds = requireOrderFunds(order, payment);
+    requirePaymentEntry(order, payment);
+    if (order.getStatus() == OrderStatus.COMPLETED) {
+      requireCompletedRecords(order, payment, orderFunds);
+      return orderResponse(order, memberId);
+    }
+    if (order.getStatus() != OrderStatus.AWAITING_CONFIRMATION
+        || !"PAID".equals(payment.status())
+        || !"HELD".equals(orderFunds.getStatus())) {
+      throw invalidState();
+    }
+    requireNoPendingCancellation(order);
+    requireNoActiveTimer(order);
+    if (!deliveryRepository.existsByOrderIdAndSequenceNo(orderId, 1)
+        || (deliveryRepository.revisions(orderId) > 0
+            && !deliveryRepository.existsByOrderIdAndSequenceNo(orderId, 2))) {
+      throw integrityError();
+    }
+    if (orderClosureRepository.findByOrderId(orderId).isPresent()
+        || settlementRepository.findByOrderId(orderId).isPresent()) {
+      throw integrityError();
+    }
+    var distribution = FullFundingPolicy.completed(payment.amount());
+    var wallet =
+        walletRepository
+            .findByMemberIdForUpdate(order.getSellerId())
+            .orElseThrow(FullFundingService::integrityError);
+    var occurredAt = currentTime();
+    wallet.creditSettlement(distribution.sellerPayout(), occurredAt);
+    walletEntryRepository.saveAndFlush(
+        WalletEntry.sellerPayout(
+            order.getSellerId(),
+            payment.id(),
+            distribution.sellerPayout(),
+            wallet.getBalance(),
+            occurredAt));
+    settlementRepository.saveAndFlush(
+        Settlement.create(orderId, payment.amount(), FEE_RATE_BPS, occurredAt));
+    orderClosureRepository.saveAndFlush(
+        OrderClosure.completed(orderId, memberId, payment.amount(), occurredAt));
+    orderFunds.release(occurredAt);
+    order.confirm(occurredAt);
+    orderRepository.flush();
+    orderFundsRepository.flush();
+    orderEventPublisher.publish(
+        order,
+        orderHistoryRepository.saveAndFlush(OrderHistory.completed(orderId, memberId, occurredAt)));
+    return orderResponse(order, memberId);
+  }
+
+  public OrderDetailResponse refund(long memberId, long orderId, String reason) {
+    var order = lockOrder(memberId, orderId);
+    requireRole(order.getSellerId() == memberId);
+    var payment = requirePayment(order);
+    var orderFunds = requireOrderFunds(order, payment);
+    requirePaymentEntry(order, payment);
+    if (order.getStatus() == OrderStatus.CANCELLED) {
+      var closure =
+          orderClosureRepository
+              .findByOrderId(orderId)
+              .orElseThrow(FullFundingService::integrityError);
+      if (!"REFUNDED".equals(payment.status())
+          || !"REFUNDED".equals(orderFunds.getStatus())
+          || !"MUTUAL_CANCELLATION".equals(closure.getReason())
+          || closure.getBuyerRefundAmount() != payment.amount()
+          || settlementRepository.findByOrderId(orderId).isPresent()) {
+        throw integrityError();
+      }
+      requireWalletEntry(
+          order.getBuyerId(), payment, WalletEntryType.REFUND, payment.amount(), "REFUND:");
+      return orderResponse(order, memberId);
     }
     if (!Set.of(
                 OrderStatus.IN_PROGRESS,
                 OrderStatus.AWAITING_CONFIRMATION,
                 OrderStatus.REVISION_IN_PROGRESS)
-            .contains(o.getStatus())
-        || !"PAID".equals(p.status())
-        || !"HELD".equals(f.getStatus())) throw state();
-    var pending = cancellations.findByOrderIdAndStatus(id, "PENDING");
-    if (pending.size() != 1)
+            .contains(order.getStatus())
+        || !"PAID".equals(payment.status())
+        || !"HELD".equals(orderFunds.getStatus())) {
+      throw invalidState();
+    }
+    var pendingRequests = cancellationRequestRepository.findByOrderIdAndStatus(orderId, "PENDING");
+    if (pendingRequests.size() != 1) {
       throw conflict("CANCELLATION_REQUEST_REQUIRED", "구매자의 취소 요청을 승인해 주세요.");
-    var request = pending.getFirst();
-    if (request.getRequestedBy() != o.getBuyerId()) throw integrity();
-    noTimer(o);
-    if (closures.findByOrderId(id).isPresent() || settlements.findByOrderId(id).isPresent())
-      throw integrity();
+    }
+    var request = pendingRequests.getFirst();
+    if (request.getRequestedBy() != order.getBuyerId()) {
+      throw integrityError();
+    }
+    requireNoActiveTimer(order);
+    if (orderClosureRepository.findByOrderId(orderId).isPresent()
+        || settlementRepository.findByOrderId(orderId).isPresent()) {
+      throw integrityError();
+    }
     var wallet =
-        wallets.findByMemberIdForUpdate(o.getBuyerId()).orElseThrow(FullFundingService::integrity);
-    var at = now();
-    wallet.refund(p.amount(), at);
-    p.refund(at);
-    f.refund(at);
-    request.approve(actor, null, at);
-    entries.saveAndFlush(
-        WalletEntry.refund(o.getBuyerId(), p.id(), p.amount(), wallet.getBalance(), at));
-    closures.saveAndFlush(OrderClosure.refunded(id, actor, request.getId(), p.amount(), at));
-    var from = o.getStatus();
-    o.cancel(at);
-    orders.flush();
-    payments.flush();
-    funds.flush();
-    cancellations.flush();
-    events.publish(
-        o,
-        histories.saveAndFlush(
+        walletRepository
+            .findByMemberIdForUpdate(order.getBuyerId())
+            .orElseThrow(FullFundingService::integrityError);
+    var occurredAt = currentTime();
+    wallet.refund(payment.amount(), occurredAt);
+    payment.refund(occurredAt);
+    orderFunds.refund(occurredAt);
+    request.approve(memberId, null, occurredAt);
+    walletEntryRepository.saveAndFlush(
+        WalletEntry.refund(
+            order.getBuyerId(), payment.id(), payment.amount(), wallet.getBalance(), occurredAt));
+    orderClosureRepository.saveAndFlush(
+        OrderClosure.refunded(orderId, memberId, request.getId(), payment.amount(), occurredAt));
+    var previousStatus = order.getStatus();
+    order.cancel(occurredAt);
+    orderRepository.flush();
+    paymentRepository.flush();
+    orderFundsRepository.flush();
+    cancellationRequestRepository.flush();
+    orderEventPublisher.publish(
+        order,
+        orderHistoryRepository.saveAndFlush(
             OrderHistory.cancellationRequestEvent(
-                id, actor, OrderHistoryAction.CANCELLATION_APPROVED, from, at, null)));
-    events.publish(o, histories.saveAndFlush(OrderHistory.cancelled(id, actor, from, at, reason)));
-    return response(o, actor);
+                orderId,
+                memberId,
+                OrderHistoryAction.CANCELLATION_APPROVED,
+                previousStatus,
+                occurredAt,
+                null)));
+    orderEventPublisher.publish(
+        order,
+        orderHistoryRepository.saveAndFlush(
+            OrderHistory.cancelled(orderId, memberId, previousStatus, occurredAt, reason)));
+    return orderResponse(order, memberId);
   }
 
-  private Order lock(long actor, long id) {
-    if (orders.lockDecisionActor(actor).isEmpty())
+  private Order lockOrder(long memberId, long orderId) {
+    if (orderRepository.lockDecisionActor(memberId).isEmpty()) {
       throw new BusinessException(
           HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.");
-    var o =
-        orders
-            .findForDecision(id, actor)
+    }
+    var order =
+        orderRepository
+            .findForDecision(orderId, memberId)
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
-    if (!TradePolicyVersion.CONTRACT_V3.name().equals(o.getPolicyVersion()))
-      throw conflict("ORDER_POLICY_NOT_READY", "전액 보관 정책 주문이 아닙니다.");
-    FullFundingPolicy.requireAmount(o.getPriceAmount());
-    return o;
+    if (!TradePolicyVersion.CONTRACT_V3.name().equals(order.getPolicyVersion())) {
+      throw conflict("ORDER_POLICY_NOT_READY", "결제 금액 보관 정책 주문이 아닙니다.");
+    }
+    FullFundingPolicy.requireAmount(order.getPriceAmount());
+    return order;
   }
 
-  private void requireSigned(Order o) {
-    var t = terms.findById(o.getId()).orElseThrow(FullFundingService::integrity);
-    if (!"FULL_HOLD".equals(t.getFundingMode())) throw integrity();
-    var c =
-        contracts
-            .findByOrderIdAndActiveSlot(o.getId(), 1)
+  private void requireSignedContract(Order order) {
+    var tradeTerms =
+        orderTradeTermsRepository
+            .findById(order.getId())
+            .orElseThrow(FullFundingService::integrityError);
+    if (!"FULL_HOLD".equals(tradeTerms.getFundingMode())) {
+      throw integrityError();
+    }
+    var contract =
+        orderContractRepository
+            .findByOrderIdAndActiveSlot(order.getId(), 1)
             .orElseThrow(() -> conflict("CONTRACT_NOT_SIGNED", "계약 서명이 필요합니다."));
-    var signed = signatures.findByContractIdOrderByIdAsc(c.getId());
-    if (!"SIGNED".equals(c.getStatus()) || signed.size() != 2)
+    var contractSignatures =
+        contractSignatureRepository.findByContractIdOrderByIdAsc(contract.getId());
+    if (!"SIGNED".equals(contract.getStatus()) || contractSignatures.size() != 2) {
       throw conflict("CONTRACT_NOT_SIGNED", "양측 계약 서명이 필요합니다.");
-    for (var s : signed)
-      if ((s.getMemberId() == o.getBuyerId() && !"BUYER".equals(s.getPartyRole()))
-          || (s.getMemberId() == o.getSellerId() && !"SELLER".equals(s.getPartyRole()))
-          || !java.security.MessageDigest.isEqual(s.getSignedContentHash(), c.getContentHash())
-          || !java.security.MessageDigest.isEqual(s.getSignedFileHash(), c.getFileHash())
-          || !(s.getMemberId() == o.getBuyerId() || s.getMemberId() == o.getSellerId()))
-        throw integrity();
+    }
+    for (var signature : contractSignatures) {
+      if ((signature.getMemberId() == order.getBuyerId()
+              && !"BUYER".equals(signature.getPartyRole()))
+          || (signature.getMemberId() == order.getSellerId()
+              && !"SELLER".equals(signature.getPartyRole()))
+          || !MessageDigest.isEqual(signature.getSignedContentHash(), contract.getContentHash())
+          || !MessageDigest.isEqual(signature.getSignedFileHash(), contract.getFileHash())
+          || !(signature.getMemberId() == order.getBuyerId()
+              || signature.getMemberId() == order.getSellerId())) {
+        throw integrityError();
+      }
+    }
   }
 
-  private Payment payment(Order o) {
-    var p = payments.findByOrderId(o.getId()).orElseThrow(FullFundingService::integrity);
-    if (!TradePolicyVersion.CONTRACT_V3.name().equals(p.getOrderPolicyVersion())
-        || !"FULL".equals(p.getInstallmentType())
-        || p.amount() != o.getPriceAmount()
-        || p.rate() != 1000
-        || o.getPaidAt() == null
-        || !o.getPaidAt().equals(p.getPaidAt())) throw integrity();
-    return p;
+  private Payment requirePayment(Order order) {
+    var payment =
+        paymentRepository
+            .findByOrderId(order.getId())
+            .orElseThrow(FullFundingService::integrityError);
+    if (!TradePolicyVersion.CONTRACT_V3.name().equals(payment.getOrderPolicyVersion())
+        || !"FULL".equals(payment.getInstallmentType())
+        || payment.amount() != order.getPriceAmount()
+        || payment.rate() != FEE_RATE_BPS
+        || order.getPaidAt() == null
+        || !order.getPaidAt().equals(payment.getPaidAt())) {
+      throw integrityError();
+    }
+    return payment;
   }
 
-  private OrderFunds holding(Order o, Payment p) {
-    var f = funds.findById(o.getId()).orElseThrow(FullFundingService::integrity);
-    if (!f.getHeldAt().equals(p.getPaidAt())
-        || f.getPaymentId() != p.id()
-        || f.getAmount() != p.amount()
-        || ("HELD".equals(f.getStatus())
-            ? f.getRemainingAmount() != p.amount()
-            : f.getRemainingAmount() != 0)) throw integrity();
-    return f;
+  private OrderFunds requireOrderFunds(Order order, Payment payment) {
+    var orderFunds =
+        orderFundsRepository
+            .findById(order.getId())
+            .orElseThrow(FullFundingService::integrityError);
+    if (!orderFunds.getHeldAt().equals(payment.getPaidAt())
+        || orderFunds.getPaymentId() != payment.id()
+        || orderFunds.getAmount() != payment.amount()
+        || ("HELD".equals(orderFunds.getStatus())
+            ? orderFunds.getRemainingAmount() != payment.amount()
+            : orderFunds.getRemainingAmount() != 0)) {
+      throw integrityError();
+    }
+    return orderFunds;
   }
 
-  private void debit(Order o, Payment p) {
-    credit(o.getBuyerId(), p, WalletEntryType.PAYMENT, -p.amount(), "PAYMENT:");
+  private void requirePaymentEntry(Order order, Payment payment) {
+    requireWalletEntry(
+        order.getBuyerId(), payment, WalletEntryType.PAYMENT, -payment.amount(), "PAYMENT:");
   }
 
-  private void credit(long member, Payment p, WalletEntryType type, long amount, String prefix) {
-    var e =
-        entries.findByEventKeyForUpdate(prefix + p.id()).orElseThrow(FullFundingService::integrity);
-    if (e.getMemberId() != member
-        || e.getPaymentId() == null
-        || e.getPaymentId() != p.id()
-        || e.getType() != type
-        || e.getAmountDelta() != amount) throw integrity();
+  private void requireWalletEntry(
+      long memberId, Payment payment, WalletEntryType type, long amount, String prefix) {
+    var walletEntry =
+        walletEntryRepository
+            .findByEventKeyForUpdate(prefix + payment.id())
+            .orElseThrow(FullFundingService::integrityError);
+    if (walletEntry.getMemberId() != memberId
+        || walletEntry.getPaymentId() == null
+        || walletEntry.getPaymentId() != payment.id()
+        || walletEntry.getType() != type
+        || walletEntry.getAmountDelta() != amount) {
+      throw integrityError();
+    }
   }
 
-  private void verifyCompletion(Order o, Payment p, OrderFunds f) {
-    var c = closures.findByOrderId(o.getId()).orElseThrow(FullFundingService::integrity);
-    var s = settlements.findByOrderId(o.getId()).orElseThrow(FullFundingService::integrity);
-    var d = FullFundingPolicy.completed(p.amount());
-    if (!"PAID".equals(p.status())
-        || !"RELEASED".equals(f.getStatus())
-        || !"COMPLETED".equals(c.getReason())
-        || !"MEMBER".equals(c.getActorType())
-        || !Objects.equals(c.getActorId(), o.getBuyerId())
-        || !"NORMAL".equals(s.getSettlementType())
-        || c.getFeeAmount() != d.fee()
-        || c.getSellerNetAmount() != d.sellerPayout()
-        || c.getBuyerRefundAmount() != 0
-        || !Arrays.equals(s.amounts(), new long[] {p.amount(), 1000, d.fee(), d.sellerPayout()}))
-      throw integrity();
-    credit(o.getSellerId(), p, WalletEntryType.SELLER_PAYOUT, d.sellerPayout(), "SELLER_PAYOUT:");
+  private void requireCompletedRecords(Order order, Payment payment, OrderFunds orderFunds) {
+    var closure =
+        orderClosureRepository
+            .findByOrderId(order.getId())
+            .orElseThrow(FullFundingService::integrityError);
+    var settlement =
+        settlementRepository
+            .findByOrderId(order.getId())
+            .orElseThrow(FullFundingService::integrityError);
+    var distribution = FullFundingPolicy.completed(payment.amount());
+    if (!"PAID".equals(payment.status())
+        || !"RELEASED".equals(orderFunds.getStatus())
+        || !"COMPLETED".equals(closure.getReason())
+        || !"MEMBER".equals(closure.getActorType())
+        || !Objects.equals(closure.getActorId(), order.getBuyerId())
+        || !"NORMAL".equals(settlement.getSettlementType())
+        || closure.getFeeAmount() != distribution.fee()
+        || closure.getSellerNetAmount() != distribution.sellerPayout()
+        || closure.getBuyerRefundAmount() != 0
+        || !Arrays.equals(
+            settlement.amounts(),
+            new long[] {
+              payment.amount(), FEE_RATE_BPS, distribution.fee(), distribution.sellerPayout()
+            })) {
+      throw integrityError();
+    }
+    requireWalletEntry(
+        order.getSellerId(),
+        payment,
+        WalletEntryType.SELLER_PAYOUT,
+        distribution.sellerPayout(),
+        "SELLER_PAYOUT:");
   }
 
-  private void noPending(Order o) {
-    if (!cancellations.findByOrderIdAndStatus(o.getId(), "PENDING").isEmpty())
+  private void requireNoPendingCancellation(Order order) {
+    if (!cancellationRequestRepository.findByOrderIdAndStatus(order.getId(), "PENDING").isEmpty()) {
       throw conflict("CANCELLATION_PENDING", "대기 중인 취소 요청을 먼저 처리해 주세요.");
+    }
   }
 
-  private void noTimer(Order o) {
-    if (timers.existsByOrderIdAndStatus(o.getId(), "ACTIVE"))
+  private void requireNoActiveTimer(Order order) {
+    if (orderResponseTimerRepository.existsByOrderIdAndStatus(order.getId(), "ACTIVE")) {
       throw conflict("TIMER_INTEGRATION_NOT_READY", "활성 검수 타이머 처리가 연결되기 전에는 금액 처리를 진행할 수 없습니다.");
+    }
   }
 
-  private LocalDateTime now() {
+  private LocalDateTime currentTime() {
     return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
   }
 
-  private OrderDetailResponse response(Order o, long actor) {
-    var d = details.forParticipant(o.getId(), actor);
-    return d.withAllowedActions(
+  private OrderDetailResponse orderResponse(Order order, long memberId) {
+    var detail = orderDetailQueries.forParticipant(order.getId(), memberId);
+    return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            d.policyVersion(),
-            d.status(),
-            o.getBuyerId() == actor,
-            d.revisionRequest(),
-            d.cancellationRequests(),
-            d.review()));
+            detail.policyVersion(),
+            detail.status(),
+            order.getBuyerId() == memberId,
+            detail.revisionRequest(),
+            detail.cancellationRequests(),
+            detail.review()));
   }
 
-  private static void role(boolean allowed) {
-    if (!allowed) throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "처리 권한이 없습니다.");
+  private static void requireRole(boolean allowed) {
+    if (!allowed) {
+      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "처리 권한이 없습니다.");
+    }
   }
 
-  private static BusinessException conflict(String code, String text) {
-    return new BusinessException(HttpStatus.CONFLICT, code, text);
+  private static BusinessException conflict(String code, String message) {
+    return new BusinessException(HttpStatus.CONFLICT, code, message);
   }
 
-  private static BusinessException state() {
+  private static BusinessException invalidState() {
     return conflict("ORDER_STATE_CONFLICT", "현재 주문 상태에서 처리할 수 없습니다.");
   }
 
-  private static BusinessException integrity() {
+  private static BusinessException integrityError() {
     return new BusinessException(
         HttpStatus.INTERNAL_SERVER_ERROR, "DATA_INTEGRITY_ERROR", "거래 금액 기록을 확인해야 합니다.");
   }

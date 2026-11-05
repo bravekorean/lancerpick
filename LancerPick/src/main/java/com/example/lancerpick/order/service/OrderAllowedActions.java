@@ -1,7 +1,9 @@
 package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.policy.TradePolicyVersion;
-import com.example.lancerpick.order.dto.OrderDetailResponse.*;
+import com.example.lancerpick.order.dto.OrderDetailResponse.CancellationRequest;
+import com.example.lancerpick.order.dto.OrderDetailResponse.Review;
+import com.example.lancerpick.order.dto.OrderDetailResponse.RevisionRequest;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,16 +19,26 @@ final class OrderAllowedActions {
       List<CancellationRequest> cancellations,
       Review review) {
     if (TradePolicyVersion.CONTRACT_V3.name().equals(policyVersion)) {
-      if ("AWAITING_PAYMENT".equals(status) && buyer) return List.of("PAY", "CANCEL");
-      if (List.of("REQUESTED", "AWAITING_CONTRACT", "AWAITING_PAYMENT").contains(status))
+      if ("AWAITING_PAYMENT".equals(status) && buyer) {
+        return List.of("PAY", "CANCEL");
+      }
+      if (List.of("REQUESTED", "AWAITING_CONTRACT", "AWAITING_PAYMENT").contains(status)) {
         return contractActions(status, buyer);
-      return actions("LEGACY_V1", status, buyer, revision, cancellations, review).stream()
-          .filter(a -> buyer || !"CANCEL".equals(a))
+      }
+      return actions(
+              TradePolicyVersion.LEGACY_V1.name(), status, buyer, revision, cancellations, review)
+          .stream()
+          .filter(action -> buyer || !"CANCEL".equals(action))
           .toList();
     }
-    if (TradePolicyVersion.isContract(policyVersion)) return contractActions(status, buyer);
-    if (!TradePolicyVersion.LEGACY_V1.name().equals(policyVersion)) return List.of();
-    boolean pending = cancellations.stream().anyMatch(c -> "PENDING".equals(c.status()));
+    if (TradePolicyVersion.isContract(policyVersion)) {
+      return contractActions(status, buyer);
+    }
+    if (!TradePolicyVersion.LEGACY_V1.name().equals(policyVersion)) {
+      return List.of();
+    }
+    boolean pending =
+        cancellations.stream().anyMatch(request -> "PENDING".equals(request.status()));
     var actions = new ArrayList<String>();
     if (buyer) {
       switch (status) {
@@ -62,7 +74,7 @@ final class OrderAllowedActions {
     return List.copyOf(actions);
   }
 
-  /** 계약 주문은 선금 전 수락·거절·취소만 연결돼 있다. 계약 확인·선금 결제·이후 거래 명령은 전용 API(E5·E6·J4)가 생길 때 추가한다. */
+  /** 계약 주문의 결제 전 공통 행동. V2 금융 명령은 차단하고 V3 결제/결제 후 행동은 위 분기에서 별도 허용한다. */
   private static List<String> contractActions(String status, boolean buyer) {
     return switch (status) {
       case "REQUESTED" -> buyer ? List.of("CANCEL") : List.of("ACCEPT", "REJECT");

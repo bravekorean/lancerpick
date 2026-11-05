@@ -1,5 +1,6 @@
 package com.example.lancerpick.order.repository;
 
+import com.example.lancerpick.common.policy.TradePolicyVersion;
 import com.example.lancerpick.order.entity.Order;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
@@ -34,10 +35,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
   default Optional<Order> findForFundedOrLegacyDecision(long orderId, long memberId) {
     var order = findForDecision(orderId, memberId);
-    order.ifPresent(o -> {
-      if (!"CONTRACT_V3".equals(o.getPolicyVersion()))
-        com.example.lancerpick.common.policy.TradePolicyVersion.requireLegacyCommand(
-            o.getPolicyVersion());
+    order.ifPresent(value -> {
+      if (!TradePolicyVersion.CONTRACT_V3.name().equals(value.getPolicyVersion())) {
+        TradePolicyVersion.requireLegacyCommand(value.getPolicyVersion());
+      }
     });
     return order;
   }
