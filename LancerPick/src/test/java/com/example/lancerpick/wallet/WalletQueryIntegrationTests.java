@@ -222,8 +222,8 @@ class WalletQueryIntegrationTests {
                 amount, at.minusMinutes(2), at.minusMinutes(1), at.minusMinutes(1), at.plusDays(1).minusMinutes(1),
                 refunded ? at : null, at.minusDays(1), at);
         jdbc.update("INSERT INTO order_snapshots(order_id,product_version_snapshot,product_title_snapshot,description_snapshot,scope_snapshot,preparation_snapshot,terms_snapshot,requirements) VALUES (?,0,'조회용 상품','설명','범위','준비','규칙','요구사항')", order);
-        jdbc.update("INSERT INTO payments(id,order_id,amount,status,paid_at,refunded_at) VALUES (?,?,?,?,?,?)",
-                payment, order, amount, refunded ? "REFUNDED" : "PAID", at.minusMinutes(1), refunded ? at : null);
+        jdbc.update("INSERT INTO payments(id,order_id,amount,status,paid_at,refunded_at,refunded_amount) VALUES (?,?,?,?,?,?,?)",
+                payment, order, amount, refunded ? "REFUNDED" : "PAID", at.minusMinutes(1), refunded ? at : null, refunded ? amount : 0);
         long balance = jdbc.queryForObject("SELECT balance FROM wallets WHERE member_id = ?", Long.class, buyer);
         jdbc.update("INSERT INTO wallet_entries(member_id,payment_id,type,amount_delta,balance_after,event_key,created_at) VALUES (?,?,'PAYMENT',?,?,?,?)",
                 buyer, payment, -amount, balance - amount, "PAYMENT:" + payment, at);

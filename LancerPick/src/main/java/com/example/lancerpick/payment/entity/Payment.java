@@ -15,6 +15,12 @@ public class Payment {
     private long orderId;
     @Column(name="amount", nullable=false)
     private long amount;
+    @Column(name="order_policy_version", nullable=false, updatable=false, length=32)
+    private String orderPolicyVersion = "LEGACY_V1";
+    @Column(name="installment_type", nullable=false, updatable=false, length=16)
+    private String installmentType = "FULL";
+    @Column(name="refunded_amount", nullable=false)
+    private long refundedAmount;
     @Column(name="fee_rate_bps", nullable=false)
     private int feeRateBps;
     @Column(name="status", nullable=false, length=10)
@@ -30,7 +36,7 @@ public class Payment {
         if(orderId<=0 || amount<1 || amount>1_000_000 || at==null)throw new IllegalArgumentException("Invalid payment");
         var p=new Payment();p.orderId=orderId;p.amount=amount;p.feeRateBps=1000;p.status="PAID";p.paidAt=at;return p;
     }
-    public void refund(LocalDateTime at){if(!"PAID".equals(status) || at==null || at.isBefore(paidAt))throw new IllegalStateException("Invalid refund");status="REFUNDED";refundedAt=at;}
+    public void refund(LocalDateTime at){if(!"PAID".equals(status) || at==null || at.isBefore(paidAt))throw new IllegalStateException("Invalid refund");status="REFUNDED";refundedAt=at;refundedAmount=amount;}
     public long id(){return id;} public long amount(){return amount;} public String status(){return status;} public int rate(){return feeRateBps;}
     public long getOrderId(){return orderId;}
 

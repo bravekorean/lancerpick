@@ -39,6 +39,15 @@
 
 ### 기준·설계
 
+- [고도화 공통 기반 팀원 시작 안내](advanced-team-start.md): 이번 공유 범위·V3/V4 실행·담당별 착수 위치·후속 DB 작업 순서.
+
+- [4인 고도화 설계안 v0.1 — 현재 검토안](advanced-design-four-person.md): 회원·상품 보완, 채팅·알림·전자계약서, 정은찬·황준범의 Redis·Batch 등 공통 기반 담당. 이전 2인·3인 설계안은 이력으로 보존한다.
+- [고도화 DB 설계안 v0.3](advanced-db-design.md): 신규 업무 테이블 12개, 현재 계약·결제 회차·타이머·금액 분배 제약.
+- [고도화 상태·제약 명세](advanced-db-transitions.md): 관리자 타이머 해제·만료 우선·서비스 검증 책임·격리 DB 검사 기록.
+- [고도화 금융 기반 1차 구현](advanced-finance-foundation.md): V3·엔티티 확장·고정 비율 금액 계산, 기존 거래 유지와 후속 연결 범위.
+- [전자계약 버전·서명 기반](order-contract-foundation.md): V4 계약 테이블·내부 명령·문서 해시·양측 서명. PDF/화면/분할 결제 활성화는 후속.
+- [고도화 DDL 후보](sql/advanced-db-candidate.sql): V1/V2 후속 검토 SQL. 실행 Flyway 자동 적용 대상이 아니며 서비스 호환 변경 후 단계별 적용.
+
 - [랜서픽 MVP 기획 명세서 v1.0](mvp-spec.md)
 - [랜서픽 MVP 화면 흐름 v1.0 — 검토 반영본](screen-flow.md)
 - [랜서픽 MVP API 명세서](api-spec.md)
@@ -47,6 +56,8 @@
 - [랜서픽 공통 개발 규칙 v1.0](development-rules.md)
 - [랜서픽 Git 협업 및 Pull Request 운영 규칙](git-workflow.md)
 - [랜서픽 확장 계획서 v1.0](expansion-plan.md)
+- [2인 고도화 설계안 v0.1](advanced-design-two-person.md): 황준범 채팅·WebSocket 중심, 정은찬 알림 담당 제안, 기술 조합 5개와 추천 순위. 검토안이며 기존 MVP 범위를 변경하지 않는다.
+- [3인 고도화 설계안 v0.1](advanced-design-three-person.md): 김창재 회원·인증 고도화 추가, 이메일 인증 가입·비밀번호 재설정/변경·세션 폐기 설계. 2인 설계안은 보존하며 아이디 찾기의 현재 데이터 한계도 구분한다.
 
 ### 실행·개발
 

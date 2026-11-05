@@ -120,7 +120,7 @@ class OrderPaymentIntegrationTests {
     }
     @Test void refundedPaymentCannotBePaidAgain() throws Exception {
         payments.pay(buyer,""+order,true);
-        jdbc.update("UPDATE payments SET status='REFUNDED',refunded_at=paid_at WHERE order_id=?",order);
+        jdbc.update("UPDATE payments SET status='REFUNDED',refunded_at=paid_at,refunded_amount=amount WHERE order_id=?",order);
         jdbc.update("UPDATE orders SET status='CANCELLED',cancelled_at=paid_at WHERE id=?",order);
         request(order,buyer,"{\"agreedToTerms\":true}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PAYMENT_ALREADY_REFUNDED"));
         assertThat(balance()).isEqualTo(20000); assertThat(count("payments")).isEqualTo(1);
