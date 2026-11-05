@@ -40,6 +40,9 @@
 ### 기준·설계
 
 - [고도화 공통 기반 팀원 시작 안내](advanced-team-start.md): 이번 공유 범위·V3/V4 실행·담당별 착수 위치·후속 DB 작업 순서.
+- [고도화 전체 업무 스키마 V5/V6](advanced-schema-foundation.md): 목표 신규 12개 테이블 준비, 누적 29개·기존 엔티티 호환·후속 분할 결제 전환 경계.
+- [설계 리뷰 후 정책 경계 보완](advanced-policy-boundary.md): 정책 DTO·허용 행동·기존 명령 차단·시각 검증과 남은 활성화 조건.
+- [V5 이후 적용·결제 회차 전환 기준](advanced-rollout-order.md): DDL·회차별 조회·부분 반환의 공동 전환 시점과 담당 연결.
 
 - [4인 고도화 설계안 v0.1 — 현재 검토안](advanced-design-four-person.md): 회원·상품 보완, 채팅·알림·전자계약서, 정은찬·황준범의 Redis·Batch 등 공통 기반 담당. 이전 2인·3인 설계안은 이력으로 보존한다.
 - [고도화 DB 설계안 v0.3](advanced-db-design.md): 신규 업무 테이블 12개, 현재 계약·결제 회차·타이머·금액 분배 제약.
