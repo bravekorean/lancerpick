@@ -74,7 +74,10 @@ final class OrderAllowedActions {
     return List.copyOf(actions);
   }
 
-  /** 계약 주문의 결제 전 공통 행동. V2 금융 명령은 차단하고 V3 결제/결제 후 행동은 위 분기에서 별도 허용한다. */
+  /**
+   * 계약 주문의 결제 전 공통 행동. 수락은 공통 ACCEPT(POST /api/orders/{id}/accept) 경로를 사용한다. 초안/서명은 계약 API가 처리한다.
+   * V2 금융 명령은 차단하고 V3 결제/결제 후 행동은 위 분기에서 별도 허용한다.
+   */
   private static List<String> contractActions(String status, boolean buyer) {
     return switch (status) {
       case "REQUESTED" -> buyer ? List.of("CANCEL") : List.of("ACCEPT", "REJECT");

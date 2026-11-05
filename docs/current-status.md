@@ -2,9 +2,17 @@
 
 2026-11-05 후속 로컬 `feature/full-funding-payments`: main `2fec099`(#87)의 계약/PDF·V7 기반에 **주문 결제 금액만 차감·보관, 수동 구매 확정 시 판매자 구매 적립금 지급, 판매자 승인 전액 환불**과 주문 상세 대금 표시를 연결했다. main 1053da6 통합·컨벤션 정리 후 백엔드 clean build 770건·프런트 171건/lint/build 통과. 자동 확정 타이머·관리자 승인·신규 생성 활성화·실제 V3 전체 브라우저 확인은 남았다. [범위·검증](full-funding-payment.md). 아래 미연결 문구·검사 수는 해당 시점의 기록이다.
 
+## 계약 주문 수락 경로 단일화 — 2026-11-05
+
+`fix/contract-accept-single-path`(정은찬, PR 전): 같은 수락을 하던 두 경로 중 계약 전용 `POST /api/orders/{orderId}/contract/accept`와 계약 영역의 "계약 주문 수락" 버튼을 삭제했다. 판매자가 계약 주문(REQUESTED)을 볼 때 수락 버튼이 두 개 나오던 문제가 사라지고, 수락은 주문 상세의 공통 버튼(`allowedActions`의 `ACCEPT`, `POST /api/orders/{id}/accept`) 하나로 한다. 상태 전환·이력·아웃박스는 같은 `OrderDecisionService.accept`라 바뀌지 않는다. 함께 V3 기준으로 주석(`NewOrderPolicy`, `OrderAllowedActions`)과 계약 주문 결제 차단 메시지(`CONTRACT_PAYMENT_NOT_READY`, 코드 유지·문구에서 "분할 결제" 제거)를 고쳤다. DB 변경 없음. 검증 결과는 PR에 기록한다. 브라우저 확인은 하지 않았다.
+
+## 메일 발송 인프라(C3) — 2026-11-05
+
+main 반영(#90, `feature/mail-infrastructure`, 정은찬): `AccountMailSender`의 SMTP 구현 `SmtpAccountMailSender`(발송 스레드 1개 + 고정 크기 큐, 결과를 `AccountMailDeliveryRecorder`에 SENT/FAILED 안전 코드로 기록)와 `spring-boot-starter-mail`을 추가했다. `lancerpick.mail.enabled`(환경변수 `MAIL_ENABLED`) 기본 false라 메일 서버 없이 지금처럼 켜지고, 켜면 로컬 Mailpit(localhost:1025)으로 보낸다. DB 변경 없음. 자동 테스트: 병합 전 작업 브랜치에서 백엔드 `clean build` 771건 통과(로컬 `lancerpick_test`). 병합 후 main에서 재실행하지 않았으며 원격 CI는 PR 기록을 따른다. 실제 서버 + Mailpit에서 재설정 메일 수신 → 링크 토큰으로 재설정 → 새 비밀번호 로그인까지 API로 확인했다. DB의 SENT 직접 조회와 브라우저 화면 확인은 하지 않았다. 상세·한계·검증은 [메일 인프라](mail-infrastructure.md).
+
 ## 비밀번호 재설정·요청 제한(K1 일부) — 2026-11-05
 
-`feature/password-recovery`(김창재, PR 전): 로그아웃 상태 비밀번호 재설정 API(`POST /api/auth/password-reset-requests` 202, `POST /api/auth/password-resets` 204)와 화면(`/password-reset/request`, `/password-reset#token=…`, 로그인 화면 링크)을 추가했다. V5 `account_challenges`(토큰 SHA-256 해시만 저장, 15분, 일회용)·`auth_request_limits`(이메일 HMAC, 최소 60초 간격·1시간 5회)를 사용하며 DB·라이브러리 변경은 없다. **실제 메일 발송은 아직 없다**: 발송 경계 `AccountMailSender`만 두었고 구현(Spring Mail·비동기 큐)은 C3 담당(정은찬·황준범)이다. C3 전에는 발급 기록이 `FAILED`(`MAIL_NOT_CONFIGURED`)로 남는다. 상세·한계·검증은 [로그인 문서](auth-login.md#비밀번호-재설정요청-제한--2026-11-05-featurepassword-recovery).
+main 반영(#89, 김창재): 로그아웃 상태 비밀번호 재설정 API(`POST /api/auth/password-reset-requests` 202, `POST /api/auth/password-resets` 204)와 화면(`/password-reset/request`, `/password-reset#token=…`, 로그인 화면 링크)을 추가했다. V5 `account_challenges`(토큰 SHA-256 해시만 저장, 15분, 일회용)·`auth_request_limits`(이메일 HMAC, 최소 60초 간격·1시간 5회)를 사용하며 DB·라이브러리 변경은 없다. **#89 시점에는 실제 메일 발송이 없었다**: 발송 경계 `AccountMailSender`만 두었고 구현(Spring Mail·비동기 큐)은 C3 담당(정은찬·황준범, 위 항목에서 추가)이다. C3 발송기를 켜기 전에는 발급 기록이 `FAILED`(`MAIL_NOT_CONFIGURED`)로 남는다. 상세·한계·검증은 [로그인 문서](auth-login.md#비밀번호-재설정요청-제한--2026-11-05-featurepassword-recovery).
 
 2026-11-05 최신 변경: CONTRACT_V3 결제 금액 보관 정책/V7/새 계약 본문과 계약 PDF·수락/초안/서명 HTTP API·주문 상세 계약 화면이 main `2fec099`에 반영됐다. 기존 V1/V2/서명 문서는 유지한다. 상세 정책·DB·미구현 금액 명령·활성화 조건은 [결제 금액 보관 설계](full-funding-policy.md)를 따른다.
 
