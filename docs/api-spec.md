@@ -6,7 +6,7 @@
 
 ## 고도화 기반 후속 계약 — 2026-11-05
 
-V3 납품·수정 요청(#93): 경로·입력은 그대로이며 CONTRACT_V3 주문도 POST `/orders/{id}/deliveries`·`/orders/{id}/revision-request`를 쓸 수 있다. V3 `allowedActions`는 판매자 작업 중·수정 중 `DELIVER`, 구매자 검수 대기(수정 미사용) `REQUEST_REVISION`이다. 보관금이 HELD가 아니면 500 `DATA_INTEGRITY_ERROR`. V3 구매 확정·결제 후 취소와 V2 결제 후 명령은 409 `ORDER_POLICY_NOT_READY`.
+V3 납품·수정 요청(#93, 본 금융 브랜치에 통합): 경로·입력은 그대로이며 CONTRACT_V3 주문도 POST `/orders/{id}/deliveries`·`/orders/{id}/revision-request`를 쓸 수 있다. 판매자 작업 중·수정 중 `DELIVER`, 구매자 검수 대기(수정 미사용) `REQUEST_REVISION`을 제공하고 보관금이 HELD가 아니면 500 `DATA_INTEGRITY_ERROR`다. 본 브랜치에서는 V3 `PAY`·`CONFIRM`·취소 요청/해결도 추가 연결했다([금융 API](full-funding-payment.md)). V2 금융 명령 차단은 유지한다.
 
 수락 경로 단일화(#92): 계약 전용 POST `/api/orders/{orderId}/contract/accept`를 삭제했다. 계약 주문도 일반 주문과 같은 POST `/api/orders/{id}/accept`(주문 상세 응답, `allowedActions`의 `ACCEPT`)로 수락하며 REQUESTED → AWAITING_CONTRACT가 된다.
 
