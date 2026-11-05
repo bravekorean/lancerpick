@@ -3,7 +3,12 @@ import type { CreateOrderInput } from './types.ts'
 // 이 기능의 서버 요청 함수를 구현합니다. 공통 요청 처리는 shared/api/client.ts에 둡니다.
 import { apiRequest } from '../../shared/api/client.ts'
 import type { PageResponse } from '../../shared/api/types'
-import type { OrderDetail, OrderSummary, CancellationResult } from './types'
+import type {
+  OrderDetail,
+  OrderSummary,
+  CancellationResult,
+  OrderFunds,
+} from './types'
 
 function orderPath(id: string) {
   if (
@@ -94,5 +99,14 @@ export const resolveCancellationRequest = (
 }
 
 export function createOrder(input: CreateOrderInput) {
-  return apiRequest<OrderDetail>('/orders', { method: 'POST', json: prepareOrderInput(input) })
+  return apiRequest<OrderDetail>('/orders', {
+    method: 'POST',
+    json: prepareOrderInput(input),
+  })
 }
+
+export const getOrderFunds = (id: string, signal?: AbortSignal) =>
+  apiRequest<OrderFunds>(`${orderPath(id)}/funds`, {
+    signal,
+    cache: 'no-store',
+  })

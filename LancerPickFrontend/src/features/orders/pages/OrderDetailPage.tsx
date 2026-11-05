@@ -23,6 +23,7 @@ import { orderStatusLabel } from '../status'
 import { orderCommandFailureMessage } from '../failure'
 import { ReviewForm } from '../../reviews/components/ReviewForm'
 import { ContractPanel } from '../../contracts/components/ContractPanel'
+import { OrderFundsPanel } from '../components/OrderFundsPanel'
 
 export function OrderDetailPage() {
   const { id = '' } = useParams()
@@ -200,7 +201,9 @@ function OrderDetail({ id }: { id: string }) {
       <p>
         구매자 {order.buyer.displayName} · 판매자 {order.seller.displayName}
       </p>
-      <h2>보관된 거래 조건</h2>
+      {order.policyVersion === 'CONTRACT_V3' && (
+        <OrderFundsPanel orderId={order.id} />
+      )}
       {['CONTRACT_V2', 'CONTRACT_V3'].includes(order.policyVersion) && (
         <ContractPanel
           key={order.id}
@@ -211,6 +214,7 @@ function OrderDetail({ id }: { id: string }) {
         />
       )}
       <h3>상품 설명</h3>
+      <h2>보관된 거래 조건</h2>
       <p className={styles.text}>{order.productSnapshot.description}</p>
       <h3>작업 범위</h3>
       <p className={styles.text}>{order.productSnapshot.scopeDescription}</p>
@@ -374,7 +378,9 @@ function OrderDetail({ id }: { id: string }) {
           <legend>주문 수락</legend>
           <p>
             보관된 거래 조건과 구매자의 요구사항을 확인해 주세요. 수락하면
-            구매자가 결제할 수 있습니다.
+            {order.policyVersion === 'LEGACY_V1'
+              ? '구매자가 결제할 수 있습니다.'
+              : '계약 작성·양측 서명 후 전액 결제를 진행합니다.'}
           </p>
           <button
             onClick={() => {

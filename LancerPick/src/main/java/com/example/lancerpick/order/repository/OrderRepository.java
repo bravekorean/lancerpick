@@ -1,5 +1,6 @@
 package com.example.lancerpick.order.repository;
 
+import com.example.lancerpick.common.policy.TradePolicyVersion;
 import com.example.lancerpick.order.entity.Order;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
@@ -32,12 +33,20 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     return order;
   }
 
-  /** 납품·수정 요청·재납품용. LEGACY_V1과 CONTRACT_V3를 허용한다(금액 이동 없음). */
   default Optional<Order> findForFulfillment(long orderId, long memberId) {
     var order = findForDecision(orderId, memberId);
-    order.ifPresent(value ->
-        com.example.lancerpick.common.policy.TradePolicyVersion.requireFulfillmentCommand(
-            value.getPolicyVersion()));
+    order.ifPresent(
+        value -> TradePolicyVersion.requireFulfillmentCommand(value.getPolicyVersion()));
+    return order;
+  }
+
+  default Optional<Order> findForFundedOrLegacyDecision(long orderId, long memberId) {
+    var order = findForDecision(orderId, memberId);
+    order.ifPresent(value -> {
+      if (!TradePolicyVersion.CONTRACT_V3.name().equals(value.getPolicyVersion())) {
+        TradePolicyVersion.requireLegacyCommand(value.getPolicyVersion());
+      }
+    });
     return order;
   }
 

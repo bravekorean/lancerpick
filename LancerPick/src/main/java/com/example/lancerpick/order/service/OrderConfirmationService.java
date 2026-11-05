@@ -1,19 +1,27 @@
 package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.exception.BusinessException;
-import com.example.lancerpick.order.dto.OrderDetailResponse;
-import com.example.lancerpick.order.entity.*;
+import com.example.lancerpick.common.policy.TradePolicyVersion;
 import com.example.lancerpick.notification.service.OrderEventPublisher;
-import com.example.lancerpick.order.repository.*;
+import com.example.lancerpick.order.dto.OrderDetailResponse;
+import com.example.lancerpick.order.entity.OrderHistory;
+import com.example.lancerpick.order.entity.OrderStatus;
+import com.example.lancerpick.order.repository.CancellationRequestRepository;
+import com.example.lancerpick.order.repository.OrderDetailQueries;
+import com.example.lancerpick.order.repository.OrderHistoryRepository;
+import com.example.lancerpick.order.repository.OrderRepository;
 import com.example.lancerpick.payment.repository.PaymentRepository;
 import com.example.lancerpick.settlement.entity.Settlement;
 import com.example.lancerpick.settlement.repository.SettlementRepository;
-import java.time.*;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.*;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Profile("!demo")
@@ -26,6 +34,7 @@ public class OrderConfirmationService {
   private final SettlementRepository settlements;
   private final CancellationRequestRepository requests;
   private final Clock clock;
+  private final FullFundingService fullFunding;
 
   public OrderConfirmationService(
       OrderRepository orders,
@@ -35,7 +44,8 @@ public class OrderConfirmationService {
       PaymentRepository payments,
       SettlementRepository settlements,
       CancellationRequestRepository requests,
-      Clock clock) {
+      Clock clock,
+      FullFundingService fullFunding) {
     this.orders = orders;
     this.histories = histories;
     this.events = events;
@@ -44,6 +54,7 @@ public class OrderConfirmationService {
     this.settlements = settlements;
     this.requests = requests;
     this.clock = clock;
+    this.fullFunding = fullFunding;
   }
 
   @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -60,10 +71,14 @@ public class OrderConfirmationService {
           HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.");
     var order =
         orders
-            .findForLegacyDecision(orderId, memberId)
+            .findForDecision(orderId, memberId)
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
+    if (TradePolicyVersion.CONTRACT_V3.name().equals(order.getPolicyVersion())) {
+      return fullFunding.confirm(memberId, orderId);
+    }
+    TradePolicyVersion.requireLegacyCommand(order.getPolicyVersion());
     if (!order.getBuyerId().equals(memberId))
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "구매자만 구매 확정할 수 있습니다.");
     boolean completed = order.getStatus() == OrderStatus.COMPLETED;
@@ -96,7 +111,8 @@ public class OrderConfirmationService {
     var detail = details.forParticipant(orderId, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.policyVersion(), detail.status(),
+            detail.policyVersion(),
+            detail.status(),
             true,
             detail.revisionRequest(),
             detail.cancellationRequests(),

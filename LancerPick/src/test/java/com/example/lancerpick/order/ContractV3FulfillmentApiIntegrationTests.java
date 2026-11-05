@@ -49,8 +49,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * E6 앞부분: 금액이 움직이지 않는 V3 결제 후 명령(납품·수정 요청·재납품). V3 전액 결제(J4)가 아직 없어 결제 후 상태·결제·보관금은
- * fixture로 만든다. 구매 확정·결제 후 취소는 J4 연결 전까지 계속 막힌다.
+ * E6: 금액이 움직이지 않는 V3 납품·수정 요청·재납품의 규칙을 검사한다. 이 fixture는 결제/보관금만 만들며 실제 지갑/차감 원장은 만들지 않는다. 금융 성공 경로는
+ * FullFundingTradeIntegrationTests에서 검사한다.
  */
 @IntegrationTest
 @AutoConfigureMockMvc
@@ -117,14 +117,17 @@ class ContractV3FulfillmentApiIntegrationTests {
     long order = paidOrder(TradePolicyVersion.CONTRACT_V3, true);
     detail(order, seller)
         .andExpect(jsonPath("$.allowedActions").value(Matchers.contains("DELIVER")));
-    detail(order, buyer).andExpect(jsonPath("$.allowedActions").isEmpty());
+    detail(order, buyer)
+        .andExpect(jsonPath("$.allowedActions").value(Matchers.contains("REQUEST_CANCELLATION")));
 
     deliver(order, 1)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("AWAITING_CONFIRMATION"))
         .andExpect(jsonPath("$.allowedActions").isEmpty());
     detail(order, buyer)
-        .andExpect(jsonPath("$.allowedActions").value(Matchers.contains("REQUEST_REVISION")));
+        .andExpect(
+            jsonPath("$.allowedActions")
+                .value(Matchers.contains("REQUEST_CANCELLATION", "CONFIRM", "REQUEST_REVISION")));
 
     long delivery =
         jdbc.queryForObject(
@@ -134,22 +137,27 @@ class ContractV3FulfillmentApiIntegrationTests {
         .andExpect(jsonPath("$.status").value("REVISION_IN_PROGRESS"))
         // 재납품 기한 = 수정 요청 시각 + 원래 소요일(3일)
         .andExpect(jsonPath("$.revisionRequest.dueAt").value("2026-11-06T02:00:00.123456Z"))
-        .andExpect(jsonPath("$.allowedActions").isEmpty());
+        .andExpect(jsonPath("$.allowedActions").value(Matchers.contains("REQUEST_CANCELLATION")));
     detail(order, seller)
         .andExpect(jsonPath("$.allowedActions").value(Matchers.contains("DELIVER")));
 
     deliver(order, 2)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("AWAITING_CONFIRMATION"));
-    // 수정은 1회뿐이고 구매 확정은 J4 전까지 열지 않는다.
-    detail(order, buyer).andExpect(jsonPath("$.allowedActions").isEmpty());
+    // 수정 권한은 재납품 후 되살아나지 않는다. 금융 명령은 연결된 V3 정책에 따라 표시한다.
+    detail(order, buyer)
+        .andExpect(
+            jsonPath("$.allowedActions")
+                .value(Matchers.contains("REQUEST_CANCELLATION", "CONFIRM")));
     revise(order, delivery)
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("REVISION_ALREADY_USED"));
 
     assertThat(
             jdbc.queryForList(
-                "SELECT action FROM order_histories WHERE order_id=? ORDER BY id", String.class, order))
+                "SELECT action FROM order_histories WHERE order_id=? ORDER BY id",
+                String.class,
+                order))
         .containsExactly("DELIVERED", "REVISION_REQUESTED", "DELIVERED");
     assertThat(
             jdbc.queryForObject(
@@ -167,23 +175,23 @@ class ContractV3FulfillmentApiIntegrationTests {
   }
 
   @Test
-  void v3ConfirmationAndPaidCancellationStayClosedUntilFundsCommandsExist() throws Exception {
+  void v3MoneyCommandsRejectIncompleteDebitLedgerWithoutMovingFunds() throws Exception {
     long order = paidOrder(TradePolicyVersion.CONTRACT_V3, true);
     deliver(order, 1).andExpect(status().isOk());
     mvc.perform(
             post("/api/orders/" + order + "/confirm")
                 .with(csrf())
                 .with(authentication(auth(buyer))))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("ORDER_POLICY_NOT_READY"));
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.code").value("DATA_INTEGRITY_ERROR"));
     mvc.perform(
             post("/api/orders/" + order + "/cancel")
                 .with(csrf())
                 .with(authentication(auth(seller)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"취소\"}"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("ORDER_POLICY_NOT_READY"));
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.code").value("DATA_INTEGRITY_ERROR"));
     assertState(order, "AWAITING_CONFIRMATION");
   }
 
@@ -212,7 +220,8 @@ class ContractV3FulfillmentApiIntegrationTests {
     long released = paidOrder(TradePolicyVersion.CONTRACT_V3, true);
     deliver(released, 1).andExpect(status().isOk());
     jdbc.update(
-        "UPDATE order_funds SET status='RELEASED',remaining_amount=0,resolved_at=? WHERE order_id=?",
+        "UPDATE order_funds SET status='RELEASED',remaining_amount=0,resolved_at=? WHERE"
+            + " order_id=?",
         PAID.plusDays(1),
         released);
     long delivery =
@@ -229,8 +238,7 @@ class ContractV3FulfillmentApiIntegrationTests {
 
   /** 결제 후 작업 중 상태. V3이고 held이면 전액 결제·보관금 행을 함께 만든다. */
   private long paidOrder(TradePolicyVersion policy, boolean held) {
-    var o =
-        Order.create(buyer, seller, product, UUID.randomUUID(), 100000L, 3, PAID, policy);
+    var o = Order.create(buyer, seller, product, UUID.randomUUID(), 100000L, 3, PAID, policy);
     orders.saveAndFlush(o);
     long id = o.getId();
     created.add(id);
@@ -298,7 +306,8 @@ class ContractV3FulfillmentApiIntegrationTests {
 
   private long member() {
     return insert(
-        "INSERT INTO members(email,password_hash,display_name,created_at,updated_at) VALUES (?,'fixture','member',?,?)",
+        "INSERT INTO members(email,password_hash,display_name,created_at,updated_at) VALUES"
+            + " (?,'fixture','member',?,?)",
         UUID.randomUUID() + "@v3.test",
         PAID,
         PAID);

@@ -2,14 +2,17 @@ package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.exception.BusinessException;
 import com.example.lancerpick.common.text.TextNormalizer;
+import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.CancellationResultResponse;
 import com.example.lancerpick.order.dto.CreateCancellationRequest;
 import com.example.lancerpick.order.entity.Order;
 import com.example.lancerpick.order.entity.OrderHistory;
 import com.example.lancerpick.order.entity.OrderHistoryAction;
 import com.example.lancerpick.order.entity.OrderStatus;
-import com.example.lancerpick.notification.service.OrderEventPublisher;
-import com.example.lancerpick.order.repository.*;
+import com.example.lancerpick.order.repository.CancellationRequestQueries;
+import com.example.lancerpick.order.repository.OrderDetailQueries;
+import com.example.lancerpick.order.repository.OrderHistoryRepository;
+import com.example.lancerpick.order.repository.OrderRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -74,14 +77,16 @@ public class OrderCancellationRequestService {
     if (requests.pending(orderId) > 0) throw conflict("CANCELLATION_PENDING", "대기 중인 취소 요청이 있습니다.");
     LocalDateTime at = now(order);
     long requestId = requests.insert(orderId, memberId, key, reason, at);
-    events.publish(order, histories.saveAndFlush(
-        OrderHistory.cancellationRequestEvent(
-            orderId,
-            memberId,
-            OrderHistoryAction.CANCELLATION_REQUESTED,
-            order.getStatus(),
-            at,
-            reason)));
+    events.publish(
+        order,
+        histories.saveAndFlush(
+            OrderHistory.cancellationRequestEvent(
+                orderId,
+                memberId,
+                OrderHistoryAction.CANCELLATION_REQUESTED,
+                order.getStatus(),
+                at,
+                reason)));
     return new Created(response(order, memberId, requestId), true);
   }
 
@@ -123,9 +128,11 @@ public class OrderCancellationRequestService {
           resolution == Resolution.REJECTED
               ? OrderHistoryAction.CANCELLATION_REJECTED
               : OrderHistoryAction.CANCELLATION_WITHDRAWN;
-      events.publish(order, histories.saveAndFlush(
-          OrderHistory.cancellationRequestEvent(
-              orderId, memberId, action, order.getStatus(), at, responseReason)));
+      events.publish(
+          order,
+          histories.saveAndFlush(
+              OrderHistory.cancellationRequestEvent(
+                  orderId, memberId, action, order.getStatus(), at, responseReason)));
     }
     return response(order, memberId, targetId);
   }
@@ -135,7 +142,7 @@ public class OrderCancellationRequestService {
       throw new BusinessException(
           HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.");
     return orders
-        .findForLegacyDecision(orderId, memberId)
+        .findForFundedOrLegacyDecision(orderId, memberId)
         .orElseThrow(OrderCancellationRequestService::notFound);
   }
 
@@ -149,7 +156,8 @@ public class OrderCancellationRequestService {
         request.response(),
         detail.withAllowedActions(
             OrderAllowedActions.actions(
-                detail.policyVersion(), detail.status(),
+                detail.policyVersion(),
+                detail.status(),
                 order.getBuyerId().equals(memberId),
                 detail.revisionRequest(),
                 detail.cancellationRequests(),

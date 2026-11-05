@@ -1,10 +1,12 @@
 # 랜서픽 MVP API 명세서
 
-2026-11-05 최신 변경: CONTRACT_V3 전액 보관 정책/V7/새 계약 본문과 계약 PDF·수락/초안/서명 HTTP API·주문 상세 계약 화면이 main `2fec099`에 반영됐다. 기존 V1/V2/서명 문서는 유지한다. 상세 정책·DB·미구현 금액 명령·활성화 조건은 [전액 보관 설계](full-funding-policy.md)를 따른다.
+2026-11-05 후속 로컬 `feature/full-funding-payments`: V3는 기존 payment/confirm/취소 요청 승인 API로 결제 금액 보관·수동 확정 지급·전액 반환을 처리한다. 당사자 `GET /api/orders/{id}/funds`를 추가했다. [요청·응답·오류·트랜잭션](full-funding-payment.md). 기존 V1 동작·V2 금융 차단 유지, 자동 확정/관리자 승인 후속, 생성 플래그 기본 false. 아래 과거 정책 경계와 구분한다.
+
+2026-11-05 최신 변경: CONTRACT_V3 결제 금액 보관 정책/V7/새 계약 본문과 계약 PDF·수락/초안/서명 HTTP API·주문 상세 계약 화면이 main `2fec099`에 반영됐다. 기존 V1/V2/서명 문서는 유지한다. 상세 정책·DB·미구현 금액 명령·활성화 조건은 [결제 금액 보관 설계](full-funding-policy.md)를 따른다.
 
 ## 고도화 기반 후속 계약 — 2026-11-05
 
-V3 납품·수정 요청(#93): 경로·입력은 그대로이며 CONTRACT_V3 주문도 POST `/orders/{id}/deliveries`·`/orders/{id}/revision-request`를 쓸 수 있다. V3 `allowedActions`는 판매자 작업 중·수정 중 `DELIVER`, 구매자 검수 대기(수정 미사용) `REQUEST_REVISION`이다. 보관금이 HELD가 아니면 500 `DATA_INTEGRITY_ERROR`. V3 구매 확정·결제 후 취소와 V2 결제 후 명령은 409 `ORDER_POLICY_NOT_READY`.
+V3 납품·수정 요청(#93, 본 금융 브랜치에 통합): 경로·입력은 그대로이며 CONTRACT_V3 주문도 POST `/orders/{id}/deliveries`·`/orders/{id}/revision-request`를 쓸 수 있다. 판매자 작업 중·수정 중 `DELIVER`, 구매자 검수 대기(수정 미사용) `REQUEST_REVISION`을 제공하고 보관금이 HELD가 아니면 500 `DATA_INTEGRITY_ERROR`다. 본 브랜치에서는 V3 `PAY`·`CONFIRM`·취소 요청/해결도 추가 연결했다([금융 API](full-funding-payment.md)). V2 금융 명령 차단은 유지한다.
 
 수락 경로 단일화(#92): 계약 전용 POST `/api/orders/{orderId}/contract/accept`를 삭제했다. 계약 주문도 일반 주문과 같은 POST `/api/orders/{id}/accept`(주문 상세 응답, `allowedActions`의 `ACCEPT`)로 수락하며 REQUESTED → AWAITING_CONTRACT가 된다.
 

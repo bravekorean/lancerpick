@@ -1,13 +1,16 @@
 package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.exception.BusinessException;
+import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.CreateDeliveryRequest;
 import com.example.lancerpick.order.dto.OrderDetailResponse;
 import com.example.lancerpick.order.entity.Delivery;
 import com.example.lancerpick.order.entity.OrderHistory;
 import com.example.lancerpick.order.entity.OrderStatus;
-import com.example.lancerpick.notification.service.OrderEventPublisher;
-import com.example.lancerpick.order.repository.*;
+import com.example.lancerpick.order.repository.DeliveryRepository;
+import com.example.lancerpick.order.repository.OrderDetailQueries;
+import com.example.lancerpick.order.repository.OrderHistoryRepository;
+import com.example.lancerpick.order.repository.OrderRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -94,11 +97,13 @@ public class OrderDeliveryService {
         Delivery.create(orderId, sequence, request.description(), request.resultUrl(), at);
     order.deliver(at);
     deliveries.saveAndFlush(delivery);
-    events.publish(order, histories.saveAndFlush(OrderHistory.delivered(orderId, memberId, from, at)));
+    events.publish(
+        order, histories.saveAndFlush(OrderHistory.delivered(orderId, memberId, from, at)));
     var detail = details.forParticipant(orderId, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.policyVersion(), detail.status(),
+            detail.policyVersion(),
+            detail.status(),
             false,
             detail.revisionRequest(),
             detail.cancellationRequests(),

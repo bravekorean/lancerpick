@@ -1,15 +1,19 @@
 package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.exception.BusinessException;
+import com.example.lancerpick.common.policy.TradePolicyVersion;
+import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.OrderDetailResponse;
 import com.example.lancerpick.order.entity.OrderHistory;
 import com.example.lancerpick.order.entity.OrderStatus;
-import com.example.lancerpick.notification.service.OrderEventPublisher;
-import com.example.lancerpick.order.repository.*;
+import com.example.lancerpick.order.repository.OrderDetailQueries;
+import com.example.lancerpick.order.repository.OrderHistoryRepository;
+import com.example.lancerpick.order.repository.OrderRepository;
 import com.example.lancerpick.payment.repository.PaymentRepository;
 import com.example.lancerpick.wallet.entity.WalletEntry;
 import com.example.lancerpick.wallet.entity.WalletEntryType;
-import com.example.lancerpick.wallet.repository.*;
+import com.example.lancerpick.wallet.repository.WalletEntryRepository;
+import com.example.lancerpick.wallet.repository.WalletRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -32,6 +36,7 @@ public class OrderPaymentService {
   private final WalletRepository wallets;
   private final WalletEntryRepository entries;
   private final Clock clock;
+  private final FullFundingService fullFunding;
 
   public OrderPaymentService(
       OrderRepository orders,
@@ -41,7 +46,8 @@ public class OrderPaymentService {
       PaymentRepository payments,
       WalletRepository wallets,
       WalletEntryRepository entries,
-      Clock clock) {
+      Clock clock,
+      FullFundingService fullFunding) {
     this.orders = orders;
     this.histories = histories;
     this.events = events;
@@ -50,6 +56,7 @@ public class OrderPaymentService {
     this.wallets = wallets;
     this.entries = entries;
     this.clock = clock;
+    this.fullFunding = fullFunding;
   }
 
   /** 회원 공유 잠금 → 주문 → 구매자 지갑. 외부 결제 통신은 하지 않는다. */
@@ -71,10 +78,14 @@ public class OrderPaymentService {
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
+    if (TradePolicyVersion.CONTRACT_V3.name().equals(order.getPolicyVersion())) {
+      return fullFunding.pay(memberId, orderId);
+    }
     if (!order.getBuyerId().equals(memberId))
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "구매자만 결제할 수 있습니다.");
-    if (!com.example.lancerpick.common.policy.TradePolicyVersion.LEGACY_V1.name().equals(order.getPolicyVersion())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "CONTRACT_PAYMENT_NOT_READY", "계약 주문의 결제 기능이 아직 준비되지 않았습니다.");
+    if (!TradePolicyVersion.LEGACY_V1.name().equals(order.getPolicyVersion())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "CONTRACT_PAYMENT_NOT_READY", "계약 주문의 결제 기능이 아직 준비되지 않았습니다.");
     }
     var existing = payments.findByOrderId(orderId);
     if (existing.isPresent()) {
@@ -127,7 +138,8 @@ public class OrderPaymentService {
     var detail = details.forParticipant(id, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.policyVersion(), detail.status(),
+            detail.policyVersion(),
+            detail.status(),
             true,
             detail.revisionRequest(),
             detail.cancellationRequests(),

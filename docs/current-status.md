@@ -1,8 +1,12 @@
 # 랜서픽 현재 구현·검증 현황
 
+2026-11-05 후속 로컬 `feature/full-funding-payments`: main `2fec099`(#87)의 계약/PDF·V7 기반에 **주문 결제 금액만 차감·보관, 수동 구매 확정 시 판매자 구매 적립금 지급, 판매자 승인 전액 환불**과 주문 상세 대금 표시를 연결했다. main 3fb181d의 V3 납품 기반까지 통합 후 백엔드 clean build 786건·프런트 172건/lint/build 통과. 자동 확정 타이머·관리자 승인·신규 생성 활성화·실제 V3 전체 브라우저 확인은 남았다. [범위·검증](full-funding-payment.md). 아래 미연결 문구·검사 수는 해당 시점의 기록이다.
+
 ## V3 납품·수정 요청·재납품(E6 앞부분) — 2026-11-05
 
-main 반영(#93, `feature/v3-delivery-revision`, 정은찬): CONTRACT_V3 결제 후 금액이 움직이지 않는 명령을 열었다. 판매자 납품·재납품(작업 중·수정 중), 구매자 수정 요청(검수 대기, 주문당 1회)이 기존 규칙·이력·알림 그대로 동작하며 재납품 기한은 수정 요청 시각+원래 소요일이다. V3 상태별 `allowedActions`에 `DELIVER`·`REQUEST_REVISION`을 추가했고 화면은 이 값으로 기존 납품·수정 폼을 보여 준다. V3 명령은 주문 잠금 아래 전액 보관(`order_funds` HELD)을 확인하며 없으면 무결성 오류다(읽기 경계 `payment/service/OrderFundsReader` 추가, 황준범 영역). 구매 확정·결제 후 취소·취소 요청과 V2 결제 후 명령은 계속 `ORDER_POLICY_NOT_READY`다. V3 전액 결제(J4)가 없어 결제 후 상태는 테스트 fixture로 만들었고, 생성 스위치는 false라 실제 화면에는 V3 주문이 생기지 않는다. 검수 타이머 취소는 E7에서 연결한다. DB 변경 없음. 병합 전 브랜치에서 백엔드 `clean build` 775건 통과. 브라우저 확인은 하지 않았다.
+아래는 main #93 시점의 기록이다. 본 브랜치는 해당 보관금 검증·납품/수정 규칙을 보존하면서 V3 결제·수동 확정·취소 요청/승인 환불까지 연결했다([금융 구현](full-funding-payment.md)).
+
+main 반영(#93, `feature/v3-delivery-revision`, 정은찬): CONTRACT_V3 결제 후 금액이 움직이지 않는 명령을 열었다. 판매자 납품·재납품(작업 중·수정 중), 구매자 수정 요청(검수 대기, 주문당 1회)이 기존 규칙·이력·알림 그대로 동작하며 재납품 기한은 수정 요청 시각+원래 소요일이다. V3 상태별 `allowedActions`에 `DELIVER`·`REQUEST_REVISION`을 추가했고 화면은 이 값으로 기존 납품·수정 폼을 보여 준다. V3 명령은 주문 잠금 아래 결제 금액 보관(`order_funds` HELD)을 확인하며 없으면 무결성 오류다(읽기 경계 `payment/service/OrderFundsReader` 추가, 황준범 영역). 구매 확정·결제 후 취소·취소 요청과 V2 결제 후 명령은 계속 `ORDER_POLICY_NOT_READY`다. V3 전액 결제(J4)가 없어 결제 후 상태는 테스트 fixture로 만들었고, 생성 스위치는 false라 실제 화면에는 V3 주문이 생기지 않는다. 검수 타이머 취소는 E7에서 연결한다. DB 변경 없음. 병합 전 브랜치에서 백엔드 `clean build` 775건 통과. 브라우저 확인은 하지 않았다.
 
 ## 계약 주문 수락 경로 단일화 — 2026-11-05
 
@@ -16,7 +20,7 @@ main 반영(#90, `feature/mail-infrastructure`, 정은찬): `AccountMailSender`�
 
 main 반영(#89, 김창재): 로그아웃 상태 비밀번호 재설정 API(`POST /api/auth/password-reset-requests` 202, `POST /api/auth/password-resets` 204)와 화면(`/password-reset/request`, `/password-reset#token=…`, 로그인 화면 링크)을 추가했다. V5 `account_challenges`(토큰 SHA-256 해시만 저장, 15분, 일회용)·`auth_request_limits`(이메일 HMAC, 최소 60초 간격·1시간 5회)를 사용하며 DB·라이브러리 변경은 없다. **#89 시점에는 실제 메일 발송이 없었다**: 발송 경계 `AccountMailSender`만 두었고 구현(Spring Mail·비동기 큐)은 C3 담당(정은찬·황준범, 위 항목에서 추가)이다. C3 발송기를 켜기 전에는 발급 기록이 `FAILED`(`MAIL_NOT_CONFIGURED`)로 남는다. 상세·한계·검증은 [로그인 문서](auth-login.md#비밀번호-재설정요청-제한--2026-11-05-featurepassword-recovery).
 
-2026-11-05 최신 변경: CONTRACT_V3 전액 보관 정책/V7/새 계약 본문과 계약 PDF·수락/초안/서명 HTTP API·주문 상세 계약 화면이 main `2fec099`에 반영됐다. 기존 V1/V2/서명 문서는 유지한다. 상세 정책·DB·미구현 금액 명령·활성화 조건은 [전액 보관 설계](full-funding-policy.md)를 따른다.
+2026-11-05 최신 변경: CONTRACT_V3 결제 금액 보관 정책/V7/새 계약 본문과 계약 PDF·수락/초안/서명 HTTP API·주문 상세 계약 화면이 main `2fec099`에 반영됐다. 기존 V1/V2/서명 문서는 유지한다. 상세 정책·DB·미구현 금액 명령·활성화 조건은 [결제 금액 보관 설계](full-funding-policy.md)를 따른다.
 
 ## V2 수락·계약 성립·선금 전 취소(E4) — 2026-11-05
 

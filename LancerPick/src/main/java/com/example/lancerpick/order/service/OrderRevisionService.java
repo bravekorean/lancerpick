@@ -1,13 +1,17 @@
 package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.exception.BusinessException;
+import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.CreateRevisionRequest;
 import com.example.lancerpick.order.dto.OrderDetailResponse;
 import com.example.lancerpick.order.entity.OrderHistory;
 import com.example.lancerpick.order.entity.OrderStatus;
 import com.example.lancerpick.order.entity.RevisionRequest;
-import com.example.lancerpick.notification.service.OrderEventPublisher;
-import com.example.lancerpick.order.repository.*;
+import com.example.lancerpick.order.repository.DeliveryRepository;
+import com.example.lancerpick.order.repository.OrderDetailQueries;
+import com.example.lancerpick.order.repository.OrderHistoryRepository;
+import com.example.lancerpick.order.repository.OrderRepository;
+import com.example.lancerpick.order.repository.RevisionRequestRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -82,12 +86,15 @@ public class OrderRevisionService {
             orderId, deliveryId, input.reason(), at, order.getDurationDaysSnapshot());
     order.requestRevision(at);
     revisions.saveAndFlush(revision);
-    events.publish(order, histories.saveAndFlush(
-        OrderHistory.revisionRequested(orderId, memberId, at, revision.getReason())));
+    events.publish(
+        order,
+        histories.saveAndFlush(
+            OrderHistory.revisionRequested(orderId, memberId, at, revision.getReason())));
     var detail = details.forParticipant(orderId, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.policyVersion(), detail.status(),
+            detail.policyVersion(),
+            detail.status(),
             true,
             detail.revisionRequest(),
             detail.cancellationRequests(),
