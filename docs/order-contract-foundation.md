@@ -1,5 +1,7 @@
 # 전자계약 버전·서명 기반 1차 구현
 
+2026-11-05 신규 정책: CONTRACT_V3는 [전액 보관·판매자 적립금 지급·자동 구매 확정](full-funding-policy.md)을 따른다. 로컬 V7은 업무 테이블 30개와 새 모드를 준비한다. 아래 선금/잔금·보상·V1~V6/29개 설명은 해당 버전의 이력이다. 신규 V3 금액 명령·스케줄러의 완료를 뜻하지 않는다.
+
 작성일: 2026-11-05. 공유 브랜치: feature/advanced-common-foundation. 초기 작업 브랜치 feature/contract-finance-foundation에서 공통 기반을 분리했다. 정책은 [4인 설계](advanced-design-four-person.md)를 따른다.
 
 후속 구현: `feature/contract-pdf-delivery`에서 [실제 PDF 생성·실패 재시도·당사자 조회/다운로드](contract-pdf-delivery.md)를 추가했다. 아래 ‘미연결’·검증 수·19개 테이블은 최초 V4 기반 당시 기록이며 최신 전체 상태와 구분한다. 현재 main은 V6까지 29개 업무 테이블을 포함한다. V2 주문 생성·초안/서명 HTTP·상태 전환·React 연결은 별도다.

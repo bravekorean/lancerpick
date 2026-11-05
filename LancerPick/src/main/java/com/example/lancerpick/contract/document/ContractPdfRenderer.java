@@ -63,7 +63,10 @@ public class ContractPdfRenderer {
         values.forEach(displayed::putIfAbsent);
         for (var entry : displayed.entrySet()) {
           writer.heading(label(entry.getKey()));
-          writer.text(String.valueOf(entry.getValue()));
+          writer.text(
+              "fundingMode".equals(entry.getKey()) && "FULL_HOLD".equals(entry.getValue())
+                  ? "전액 보관"
+                  : String.valueOf(entry.getValue()));
           writer.text("");
         }
       }
@@ -88,6 +91,9 @@ public class ContractPdfRenderer {
       case "buyerId" -> "구매자 회원번호";
       case "sellerId" -> "판매자 회원번호";
       case "total" -> "총금액(원)";
+      case "policyVersion" -> "거래 정책 버전";
+      case "fundingMode" -> "대금 처리 방식";
+      case "feeRateBps" -> "정상 수수료(bps, 1000=10%)";
       case "deposit" -> "선금(원)";
       case "balance" -> "잔금(원)";
       case "durationDays" -> "작업 소요일(1일=24시간)";

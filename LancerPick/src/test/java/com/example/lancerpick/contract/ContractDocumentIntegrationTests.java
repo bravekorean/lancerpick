@@ -73,6 +73,7 @@ class ContractDocumentIntegrationTests {
   @Autowired MockMvc mvc;
   @MockitoSpyBean ContractPdfRenderer renderer;
   @MockitoSpyBean PrivateContractStorage storage;
+  @MockitoSpyBean com.example.lancerpick.notification.service.OrderEventPublisher events;
   long buyer, seller, other, orderId, product, category;
 
   record Principal(Long memberId) implements AuthenticatedMember {}
@@ -117,7 +118,10 @@ class ContractDocumentIntegrationTests {
           snapshots.saveAndFlush(
               OrderSnapshot.create(
                   orderId, 0L, "보관 상품", "보관 설명", "보관 범위", "보관 준비", "보관 조건", "구매자 요청"));
-          jdbc.update("UPDATE orders SET policy_version='CONTRACT_V2' WHERE id=?", orderId);
+          jdbc.update(
+              "UPDATE orders SET policy_version='CONTRACT_V2',status='AWAITING_CONTRACT' WHERE"
+                  + " id=?",
+              orderId);
         });
     drafts.prepare(seller, orderId, 0, "특약: 원래 범위를 지킵니다.");
   }
@@ -142,6 +146,13 @@ class ContractDocumentIntegrationTests {
             + " order_id=?)",
         orderId);
     jdbc.update("DELETE FROM order_contracts WHERE order_id=?", orderId);
+    jdbc.update(
+        "DELETE FROM notifications WHERE event_id IN (SELECT event_id FROM outbox_events WHERE"
+            + " aggregate_type='ORDER' AND aggregate_id=?)",
+        orderId);
+    jdbc.update(
+        "DELETE FROM outbox_events WHERE aggregate_type='ORDER' AND aggregate_id=?", orderId);
+    jdbc.update("DELETE FROM order_histories WHERE order_id=?", orderId);
     jdbc.update("DELETE FROM order_snapshots WHERE order_id=?", orderId);
     jdbc.update("DELETE FROM orders WHERE id=?", orderId);
     jdbc.update("DELETE FROM products WHERE id=?", product);
@@ -426,6 +437,154 @@ class ContractDocumentIntegrationTests {
         now,
         now,
         orderId);
+  }
+
+  @Test
+  void httpAcceptDraftPdfAndBothSignaturesAdvanceOrderExactlyOnce() throws Exception {
+    jdbc.update("DELETE FROM order_contracts WHERE order_id=?", orderId);
+    jdbc.update("DELETE FROM notifications WHERE order_id=?", orderId);
+    jdbc.update(
+        "DELETE FROM outbox_events WHERE aggregate_type='ORDER' AND aggregate_id=?", orderId);
+    jdbc.update("DELETE FROM order_histories WHERE order_id=?", orderId);
+    jdbc.update("UPDATE orders SET status='REQUESTED',accepted_at=NULL WHERE id=?", orderId);
+    mvc.perform(post(path() + "/accept").with(authentication(auth(buyer))).with(csrf()))
+        .andExpect(status().isForbidden());
+    mvc.perform(post(path() + "/accept").with(authentication(auth(seller))).with(csrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("AWAITING_CONTRACT"));
+    mvc.perform(post(path() + "/accept").with(authentication(auth(seller))).with(csrf()))
+        .andExpect(status().isConflict());
+    mvc.perform(
+            post(path() + "/draft")
+                .with(authentication(auth(seller)))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"expectedVersion\":0,\"specialTerms\":\"추가 특약\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("DRAFT"));
+    var ready = documents.generate(seller, orderId, 1);
+    String body =
+        "{\"version\":1,\"contentHash\":\""
+            + ready.contentHash()
+            + "\",\"fileHash\":\""
+            + ready.fileHash()
+            + "\",\"agreed\":true}";
+    mvc.perform(
+            post(path() + "/sign")
+                .with(authentication(auth(other)))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isNotFound());
+    mvc.perform(
+            post(path() + "/sign")
+                .with(authentication(auth(buyer)))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body.replace("true", "false")))
+        .andExpect(status().isBadRequest());
+    mvc.perform(
+            post(path() + "/sign")
+                .with(authentication(auth(buyer)))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("READY"));
+    assertThat(orders.findById(orderId).orElseThrow().getStatus().name())
+        .isEqualTo("AWAITING_CONTRACT");
+    mvc.perform(
+            post(path() + "/sign")
+                .with(authentication(auth(seller)))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("SIGNED"));
+    mvc.perform(
+            post(path() + "/sign")
+                .with(authentication(auth(seller)))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk());
+    assertThat(orders.findById(orderId).orElseThrow().getStatus().name())
+        .isEqualTo("AWAITING_PAYMENT");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM order_histories WHERE order_id=?", Long.class, orderId))
+        .isEqualTo(3);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM outbox_events WHERE aggregate_type='ORDER' AND"
+                    + " aggregate_id=?",
+                Long.class,
+                orderId))
+        .isEqualTo(3);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE order_id=?", Long.class, orderId))
+        .isZero();
+  }
+
+  @Test
+  void failedEventInsertRollsBackContractAndOrderTransition() throws Exception {
+    jdbc.update("UPDATE orders SET status='AWAITING_CONTRACT' WHERE id=?", orderId);
+    var publisher =
+        org.springframework.test.util.AopTestUtils
+            .<com.example.lancerpick.notification.service.OrderEventPublisher>
+                getUltimateTargetObject(events);
+    doThrow(new IllegalStateException("outbox unavailable")).when(publisher).publish(any(), any());
+    assertThatThrownBy(() -> drafts.prepareHttp(seller, orderId, 1, "new terms"))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(documents.get(buyer, orderId).version()).isEqualTo(1);
+    assertThat(documents.get(buyer, orderId).status()).isEqualTo("DRAFT");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM order_histories WHERE order_id=?", Long.class, orderId))
+        .isEqualTo(1);
+    doCallRealMethod().when(publisher).publish(any(), any());
+    var ready = documents.generate(seller, orderId, 1);
+    drafts.signHttp(buyer, orderId, 1, ready.contentHash(), ready.fileHash());
+    doThrow(new IllegalStateException("outbox unavailable")).when(publisher).publish(any(), any());
+    assertThatThrownBy(
+            () -> drafts.signHttp(seller, orderId, 1, ready.contentHash(), ready.fileHash()))
+        .isInstanceOf(IllegalStateException.class);
+    var after = documents.get(buyer, orderId);
+    assertThat(after.status()).isEqualTo("READY");
+    assertThat(after.signatures()).hasSize(1);
+    assertThat(orders.findById(orderId).orElseThrow().getStatus().name())
+        .isEqualTo("AWAITING_CONTRACT");
+    assertThat(after.fileHash()).isEqualTo(ready.fileHash());
+  }
+
+  @Test
+  void concurrentV2SignaturesAndReplayCreateOneContractCompletion() throws Exception {
+    jdbc.update("UPDATE orders SET status='AWAITING_CONTRACT' WHERE id=?", orderId);
+    var ready = documents.generate(seller, orderId, 1);
+    var gate = new CountDownLatch(1);
+    try (var pool = Executors.newFixedThreadPool(3)) {
+      var jobs = new ArrayList<Future<?>>();
+      for (long actor : new long[] {buyer, seller, buyer})
+        jobs.add(
+            pool.submit(() -> {
+              gate.await();
+              return drafts.signHttp(actor, orderId, 1, ready.contentHash(), ready.fileHash());
+            }));
+      gate.countDown();
+      for (var job : jobs) job.get(20, TimeUnit.SECONDS);
+    }
+    assertThat(documents.get(buyer, orderId).status()).isEqualTo("SIGNED");
+    assertThat(documents.get(buyer, orderId).signatures()).hasSize(2);
+    assertThat(orders.findById(orderId).orElseThrow().getStatus().name())
+        .isEqualTo("AWAITING_PAYMENT");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM order_histories WHERE order_id=? AND"
+                    + " action='CONTRACT_SIGNED'",
+                Long.class,
+                orderId))
+        .isEqualTo(1);
   }
 
   @Test

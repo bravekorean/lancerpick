@@ -14,6 +14,48 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
 class ContractPdfRendererTests {
+  @Test
+  void fullFundingTemplateShowsNewPolicyWithoutInstallmentAmountFields() throws Exception {
+    String body;
+    try (var input = getClass().getResourceAsStream("/contracts/standard-v2-full-funding.txt")) {
+      body = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+    byte[] pdf =
+        renderer.render(
+            124,
+            1,
+            mapper.writeValueAsString(
+                Map.of(
+                    "templateVersion",
+                    "standard-v2-full-funding",
+                    "policyVersion",
+                    "CONTRACT_V3",
+                    "total",
+                    100001,
+                    "fundingMode",
+                    "FULL_HOLD",
+                    "feeRateBps",
+                    1000,
+                    "standardBody",
+                    body,
+                    "specialTerms",
+                    "원래 범위 내 수정 1회")));
+    try (var document = Loader.loadPDF(pdf)) {
+      assertThat(new PDFTextStripper().getText(document))
+          .contains("전액 보관", "자동 구매 확정", "100001")
+          .doesNotContain("[선금(원)]", "[잔금(원)]");
+      Path output = Path.of("build/reports/contracts");
+      Files.createDirectories(output);
+      Files.write(output.resolve("full-funding.pdf"), pdf);
+      var rasterizer = new PDFRenderer(document);
+      for (int i = 0; i < document.getNumberOfPages(); i++)
+        ImageIO.write(
+            rasterizer.renderImageWithDPI(i, 96),
+            "png",
+            output.resolve("full-funding-" + (i + 1) + ".png").toFile());
+    }
+  }
+
   private final JsonMapper mapper = JsonMapper.builder().build();
   private final ContractPdfRenderer renderer = new ContractPdfRenderer(mapper);
 

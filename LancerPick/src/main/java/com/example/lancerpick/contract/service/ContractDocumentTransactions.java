@@ -167,7 +167,7 @@ public class ContractDocumentTransactions {
         (lock ? orders.findForDecision(orderId, memberId) : orders.findById(orderId))
             .orElseThrow(ContractDocumentTransactions::missing);
     if ((!order.getBuyerId().equals(memberId) && !order.getSellerId().equals(memberId))
-        || !TradePolicyVersion.CONTRACT_V2.name().equals(order.getPolicyVersion())) throw missing();
+        || !TradePolicyVersion.isContract(order.getPolicyVersion())) throw missing();
     return order;
   }
 
