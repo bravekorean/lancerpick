@@ -277,8 +277,9 @@ export function ContractPanel({
           {document.status === 'SIGNED' && (
             <p>
               계약이 성립했습니다.{' '}
-              {policyVersion === 'CONTRACT_V3' ? '전액 보관' : '선금'} 결제 기능
-              연결 전까지 결제는 제공되지 않습니다.
+              {policyVersion === 'CONTRACT_V3'
+                ? '주문 상세에서 전액 적립금 결제를 진행해 주세요. 결제 대금은 구매 확정까지 보관됩니다.'
+                : '선금 결제 기능 연결 전까지 결제는 제공되지 않습니다.'}
             </p>
           )}
         </>

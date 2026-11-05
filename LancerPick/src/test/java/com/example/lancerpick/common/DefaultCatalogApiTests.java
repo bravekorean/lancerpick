@@ -34,6 +34,8 @@ import com.example.lancerpick.wallet.service.TopupApprovalTransactions;
 })
 class DefaultCatalogApiTests extends CommonApiTests {
     @MockitoBean
+    com.example.lancerpick.order.service.FullFundingService fullFundingService;
+    @MockitoBean
     com.example.lancerpick.contract.service.ContractDocumentTransactions contractDocumentTransactions;
     // This HTTP-only context excludes JPA; contract persistence is tested against MySQL separately.
     @MockitoBean

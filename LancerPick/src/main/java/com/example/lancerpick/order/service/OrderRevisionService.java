@@ -1,12 +1,12 @@
 package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.exception.BusinessException;
+import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.CreateRevisionRequest;
 import com.example.lancerpick.order.dto.OrderDetailResponse;
 import com.example.lancerpick.order.entity.OrderHistory;
 import com.example.lancerpick.order.entity.OrderStatus;
 import com.example.lancerpick.order.entity.RevisionRequest;
-import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.repository.*;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -55,7 +55,9 @@ public class OrderRevisionService {
       throw new BusinessException(
           HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.");
     var order =
-        orders.findForLegacyDecision(orderId, memberId).orElseThrow(() -> notFound("주문을 찾을 수 없습니다."));
+        orders
+            .findForFundedOrLegacyDecision(orderId, memberId)
+            .orElseThrow(() -> notFound("주문을 찾을 수 없습니다."));
     if (!order.getBuyerId().equals(memberId))
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "구매자만 수정 요청할 수 있습니다.");
     // 이미 사용한 수정 권한은 상태가 재납품 확인 대기로 바뀌어도 되살아나지 않는다.
@@ -77,12 +79,15 @@ public class OrderRevisionService {
             orderId, deliveryId, input.reason(), at, order.getDurationDaysSnapshot());
     order.requestRevision(at);
     revisions.saveAndFlush(revision);
-    events.publish(order, histories.saveAndFlush(
-        OrderHistory.revisionRequested(orderId, memberId, at, revision.getReason())));
+    events.publish(
+        order,
+        histories.saveAndFlush(
+            OrderHistory.revisionRequested(orderId, memberId, at, revision.getReason())));
     var detail = details.forParticipant(orderId, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.policyVersion(), detail.status(),
+            detail.policyVersion(),
+            detail.status(),
             true,
             detail.revisionRequest(),
             detail.cancellationRequests(),

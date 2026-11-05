@@ -32,6 +32,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     return order;
   }
 
+  default Optional<Order> findForFundedOrLegacyDecision(long orderId, long memberId) {
+    var order = findForDecision(orderId, memberId);
+    order.ifPresent(o -> {
+      if (!"CONTRACT_V3".equals(o.getPolicyVersion()))
+        com.example.lancerpick.common.policy.TradePolicyVersion.requireLegacyCommand(
+            o.getPolicyVersion());
+    });
+    return order;
+  }
+
   Optional<Order> findByBuyerIdAndRequestKey(Long buyerId, String requestKey);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -1,12 +1,12 @@
 package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.exception.BusinessException;
+import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.CreateDeliveryRequest;
 import com.example.lancerpick.order.dto.OrderDetailResponse;
 import com.example.lancerpick.order.entity.Delivery;
 import com.example.lancerpick.order.entity.OrderHistory;
 import com.example.lancerpick.order.entity.OrderStatus;
-import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.repository.*;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -62,7 +62,7 @@ public class OrderDeliveryService {
           HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.");
     var order =
         orders
-            .findForLegacyDecision(orderId, memberId)
+            .findForFundedOrLegacyDecision(orderId, memberId)
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
@@ -90,11 +90,13 @@ public class OrderDeliveryService {
         Delivery.create(orderId, sequence, request.description(), request.resultUrl(), at);
     order.deliver(at);
     deliveries.saveAndFlush(delivery);
-    events.publish(order, histories.saveAndFlush(OrderHistory.delivered(orderId, memberId, from, at)));
+    events.publish(
+        order, histories.saveAndFlush(OrderHistory.delivered(orderId, memberId, from, at)));
     var detail = details.forParticipant(orderId, memberId);
     return detail.withAllowedActions(
         OrderAllowedActions.actions(
-            detail.policyVersion(), detail.status(),
+            detail.policyVersion(),
+            detail.status(),
             false,
             detail.revisionRequest(),
             detail.cancellationRequests(),

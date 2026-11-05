@@ -36,3 +36,14 @@ export interface CreateOrderInput {
   requirements: string
   requestKey: string
 }
+
+export interface OrderFunds {
+  status: 'NOT_PAID' | 'HELD' | 'RELEASED' | 'REFUNDED'
+  amount: number
+  heldAmount: number
+  refundedAmount: number
+  feeAmount: number | null
+  sellerPayout: number | null
+  paidAt: string | null
+  resolvedAt: string | null
+}

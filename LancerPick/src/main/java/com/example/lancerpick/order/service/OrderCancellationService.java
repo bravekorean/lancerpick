@@ -1,10 +1,11 @@
 package com.example.lancerpick.order.service;
 
 import com.example.lancerpick.common.exception.BusinessException;
+import com.example.lancerpick.common.policy.TradePolicyVersion;
 import com.example.lancerpick.common.text.TextNormalizer;
+import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.dto.OrderDetailResponse;
 import com.example.lancerpick.order.entity.*;
-import com.example.lancerpick.notification.service.OrderEventPublisher;
 import com.example.lancerpick.order.repository.*;
 import com.example.lancerpick.payment.repository.PaymentRepository;
 import com.example.lancerpick.wallet.entity.*;
@@ -30,6 +31,7 @@ public class OrderCancellationService {
   private final WalletEntryRepository entries;
   private final CancellationRequestRepository requests;
   private final Clock clock;
+  private final FullFundingService fullFunding;
 
   public OrderCancellationService(
       OrderRepository orders,
@@ -40,7 +42,8 @@ public class OrderCancellationService {
       WalletRepository wallets,
       WalletEntryRepository entries,
       CancellationRequestRepository requests,
-      Clock clock) {
+      Clock clock,
+      FullFundingService fullFunding) {
     this.orders = orders;
     this.histories = histories;
     this.events = events;
@@ -50,6 +53,7 @@ public class OrderCancellationService {
     this.entries = entries;
     this.requests = requests;
     this.clock = clock;
+    this.fullFunding = fullFunding;
   }
 
   @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -73,10 +77,11 @@ public class OrderCancellationService {
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
+    if (TradePolicyVersion.CONTRACT_V3.name().equals(order.getPolicyVersion())
+        && order.getPaidAt() != null) return fullFunding.refund(memberId, orderId, reason);
     // 계약 주문은 선금 전(금액 이동 없음)만 이 경로로 취소한다. 선금 후 취소·반환은 전용 경로(E6)다.
     if (!order.isContractPolicy() || order.getPaidAt() != null)
-      com.example.lancerpick.common.policy.TradePolicyVersion.requireLegacyCommand(
-          order.getPolicyVersion());
+      TradePolicyVersion.requireLegacyCommand(order.getPolicyVersion());
     boolean buyer = order.getBuyerId().equals(memberId);
     var payment = payments.findByOrderId(orderId);
     boolean paid = order.getPaidAt() != null;
@@ -142,11 +147,14 @@ public class OrderCancellationService {
       var request = pending.getFirst();
       request.approve(memberId, reason, at);
       requests.saveAndFlush(request);
-      events.publish(order, histories.saveAndFlush(
-          OrderHistory.cancellationRequestEvent(
-              orderId, memberId, OrderHistoryAction.CANCELLATION_APPROVED, from, at, reason)));
+      events.publish(
+          order,
+          histories.saveAndFlush(
+              OrderHistory.cancellationRequestEvent(
+                  orderId, memberId, OrderHistoryAction.CANCELLATION_APPROVED, from, at, reason)));
     }
-    events.publish(order, histories.saveAndFlush(OrderHistory.cancelled(orderId, memberId, from, at, reason)));
+    events.publish(
+        order, histories.saveAndFlush(OrderHistory.cancelled(orderId, memberId, from, at, reason)));
     return response(orderId, memberId, buyer);
   }
 
@@ -154,7 +162,12 @@ public class OrderCancellationService {
     var d = details.forParticipant(id, member);
     return d.withAllowedActions(
         OrderAllowedActions.actions(
-            d.policyVersion(), d.status(), buyer, d.revisionRequest(), d.cancellationRequests(), d.review()));
+            d.policyVersion(),
+            d.status(),
+            buyer,
+            d.revisionRequest(),
+            d.cancellationRequests(),
+            d.review()));
   }
 
   private static BusinessException invalid() {

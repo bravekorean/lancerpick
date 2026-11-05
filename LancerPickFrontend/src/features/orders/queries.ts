@@ -1,5 +1,5 @@
 import { getMemberSession } from '../auth/api'
-import { getOrder, getOrders } from './api'
+import { getOrder, getOrders, getOrderFunds } from './api'
 import { useQuery } from '@tanstack/react-query'
 
 export function useOrders(
@@ -31,5 +31,14 @@ export function useOrderEntryMember() {
     retry: false,
     gcTime: 0,
     staleTime: 0,
+  })
+}
+
+export function useOrderFunds(id: string) {
+  return useQuery({
+    queryKey: ['wallet', 'order-funds', id],
+    queryFn: ({ signal }) => getOrderFunds(id, signal),
+    retry: false,
+    gcTime: 0,
   })
 }
