@@ -32,6 +32,9 @@ import com.example.lancerpick.wallet.service.TopupApprovalTransactions;
                 + "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration"
 })
 class DefaultCatalogApiTests extends CommonApiTests {
+    // This HTTP-only context excludes JPA; contract persistence is tested against MySQL separately.
+    @MockitoBean
+    com.example.lancerpick.contract.service.OrderContractService orderContractService;
     @MockitoBean
     com.example.lancerpick.review.service.ReviewService reviewService;
     @MockitoBean

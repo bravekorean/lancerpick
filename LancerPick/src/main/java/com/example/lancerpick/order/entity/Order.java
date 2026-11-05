@@ -46,6 +46,9 @@ public class Order {
     @Column(name = "price_amount", nullable = false, updatable = false)
     private Long priceAmount;
 
+    @Column(name = "policy_version", nullable = false, updatable = false, length = 32)
+    private String policyVersion = "LEGACY_V1";
+
     @Column(name = "duration_days_snapshot", nullable = false, updatable = false)
     private Integer durationDaysSnapshot;
 
