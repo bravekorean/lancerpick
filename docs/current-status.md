@@ -18,6 +18,10 @@ main `2272969`에서 분기한 `codex/fix-profile-payout-races` 로컬 변경이
 
 추가 main `5a36ef4`(#101)도 통합했다. 프런트 전체 197건·lint/build와 변경된 상품 검색 HTTP·MySQL 검사 33건 통과. 백엔드 전체 822건은 #101 이전 통합 실행 결과이며 선택 검사 수와 합산하지 않는다.
 
+## 이메일 인증 가입(K1 일부) — 2026-11-06
+
+`feature/email-verification`(김창재, PR 전): 가입이 이메일 인증 후에만 가능해졌다. `/signup`에서 인증 메일을 요청(가입 여부와 무관한 같은 202) → 메일 링크 `/signup/verify`에서 "인증하기"로 가입 증명을 받고 → 비밀번호·표시 이름 입력 → `POST /api/members`(`emailVerificationProof` 필수)가 증명 소비·회원(`email_verified_at`)·지갑·100만원을 한 트랜잭션으로 만든다. DB·라이브러리 변경 없음(V5 `account_challenges` `SIGNUP_EMAIL`). **팀 영향**: 증명 없는 가입 경로가 없어 메일이 꺼진 기본 상태에서는 화면에서 새 계정을 만들 수 없다(새 계정이 필요하면 Mailpit). 테스트에서 회원을 만들 때는 `support/TestMembers`를 쓴다(기존 테스트 10개 파일 전환). 기존 회원 인증 전환·아이디 안내는 남음. [상세](auth-login.md#이메일-인증-가입--2026-11-06-featureemail-verification)
+
 ## V3 활성화 게이트(G1) 시나리오 — 2026-11-06
 
 문서만(`docs/v3-activation-gate.md`, 정은찬): 신규 V3 생성 스위치를 켜기 전 확인할 정상·취소·경합·롤백·권한·호환·실서버/브라우저 시나리오와 기존 테스트 근거, 추가할 테스트(처음부터 끝까지 거래, V3 결제 전 취소, 만료 vs 수정 요청·관리자 해제 동시 실행, 금액 불변식 공통 검사), 불변식 확인 조회, 활성화·되돌리기 절차를 정리했다. 후속 `test/v3-activation-gate`: 3절 추가 테스트 7건(`V3ActivationGateIntegrationTests`, 실제 생성 설정 on)과 공통 불변식 검사 `support/V3FundsInvariant`를 추가해 기존 V3 금융·타이머 통합 테스트 정리 단계에서도 판정한다. 운영 코드 변경 없음. 로컬 `lancerpick_test`에서 백엔드 전체 `clean build` 835건 통과(실패·오류·건너뜀 0). 원격 CI는 PR 기록을 따른다. 판정은 보류(K4 미연결). 함께 계약 패널의 결제 안내 문구가 결제 대기(`AWAITING_PAYMENT`) 주문에만 보이도록 고쳤다(계약 영역, 프런트 typecheck·lint·test:api 200건·build 통과, 브라우저 재확인은 안 함).

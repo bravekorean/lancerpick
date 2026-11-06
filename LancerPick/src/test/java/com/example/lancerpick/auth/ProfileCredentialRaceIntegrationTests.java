@@ -6,14 +6,14 @@ import static org.mockito.Mockito.doAnswer;
 import com.example.lancerpick.auth.entity.AccountChallenge;
 import com.example.lancerpick.auth.repository.AccountChallengeRepository;
 import com.example.lancerpick.auth.service.PasswordResetService;
-import com.example.lancerpick.auth.service.ResetTokens;
+import com.example.lancerpick.auth.service.OneTimeTokens;
 import com.example.lancerpick.member.dto.ChangePasswordRequest;
-import com.example.lancerpick.member.dto.SignupRequest;
 import com.example.lancerpick.member.dto.UpdateMeRequest;
 import com.example.lancerpick.member.entity.Member;
 import com.example.lancerpick.member.repository.MemberRepository;
 import com.example.lancerpick.member.service.MemberService;
 import com.example.lancerpick.support.IntegrationTest;
+import com.example.lancerpick.support.TestMembers;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
@@ -57,6 +57,7 @@ class ProfileCredentialRaceIntegrationTests {
     jdbc.update("DELETE FROM wallet_entries WHERE member_id=?", memberId);
     jdbc.update("DELETE FROM wallets WHERE member_id=?", memberId);
     jdbc.update("DELETE FROM members WHERE id=?", memberId);
+    TestMembers.deleteSignupProofs(jdbc, "profile-race-%@example.com");
   }
 
   @ParameterizedTest
@@ -64,8 +65,8 @@ class ProfileCredentialRaceIntegrationTests {
   void profileSaveDoesNotRestoreCredentialsAfterConcurrentChangeOrReset(boolean reset)
       throws Exception {
     String email = "profile-race-" + UUID.randomUUID() + "@example.com";
-    memberId = Long.parseLong(service.signup(new SignupRequest(email, OLD_PASSWORD, "이전 이름")).id());
-    var token = ResetTokens.issue();
+    memberId = Long.parseLong(service.signup(TestMembers.signupRequest(jdbc, email, OLD_PASSWORD, "이전 이름")).id());
+    var token = OneTimeTokens.issue();
     if (reset) {
       var at = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
       challenges.saveAndFlush(AccountChallenge.passwordReset(memberId, email, token.hash(), 0L, at, at.plusMinutes(15)));
