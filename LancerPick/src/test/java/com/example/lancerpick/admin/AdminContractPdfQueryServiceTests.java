@@ -104,7 +104,7 @@ class AdminContractPdfQueryServiceTests {
     assertThat(service.inspect(1, 2, null).generationCandidate().reason())
         .isEqualTo(BlockReason.ORDER_NOT_WRITABLE);
     when(order.getPaidAt()).thenReturn(null);
-    when(cancellations.findByOrderIdAndStatus(2, "PENDING"))
+    when(cancellations.findByOrderIdAndStatus(2, com.example.lancerpick.order.entity.CancellationRequestStatus.PENDING))
         .thenReturn(List.of(mock(CancellationRequest.class)));
     assertThat(service.inspect(1, 2, null).generationCandidate().reason())
         .isEqualTo(BlockReason.CANCELLATION_PENDING);

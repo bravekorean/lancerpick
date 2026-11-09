@@ -1,5 +1,20 @@
 # 랜서픽 현재 구현·검증 현황
 
+## 주문 서비스 구조 정리(동작 변경 없음) — 2026-11-09 로컬
+
+`refactor/order-service-cleanup`, main `de0b72f`(#124)에서 분기. 리팩토링 제안을 Codex로 반박 검토한 뒤 그 조건대로 반영했다. API·DB·Flyway·응답 형식 변경은 없다.
+
+- **주문 잠금 공통화**: `order/service/OrderCommandLocks`(`Propagation.MANDATORY`)가 실행 회원 공유 잠금 → 당사자 주문 배타 잠금과 401/404를 맡는다. 정책 검사는 호출자에 그대로 둔다(납품·수정은 `findForFulfillment` 경로, 취소 요청은 기존 404 문구 때문에 회원 잠금만 공유). `FullFundingService.lockOrder`는 public 진입점 방어용으로 V3·금액 검증과 함께 유지한다. 계약·채팅의 같은 블록은 담당 영역이라 손대지 않았다.
+- **정책 판단**: `Order.isFullFunding()`을 추가해 주문 패키지의 `CONTRACT_V3.name().equals(...)` 비교를 바꿨다. 알 수 없는 정책 값 차단은 기존 `TradePolicyVersion.require*`가 계속 맡는다.
+- **취소 요청 상태 enum**: `CancellationRequestStatus`(PENDING·APPROVED·REJECTED·WITHDRAWN)와 `@Enumerated(STRING)`+`@JdbcTypeCode(VARCHAR)`(Order.status와 같은 매핑). 저장소 매개변수·Querydsl 조건·JPQL 리터럴·조회 Row·서비스 비교를 함께 바꿨고, 응답 DTO는 문자열 그대로다. 엔티티의 한 줄 압축 코드도 펼쳤다. 계약 서비스 두 곳(`ContractDocumentTransactions`, `OrderContractService`)은 컴파일을 위해 `"PENDING"` 인자만 enum으로 바꿨다(황준범 영역, 동작 동일).
+- **UTC 시각**: `common/time/UtcTimes.nowMicros(clock)`. 주문 패키지만 적용했고 시각을 읽는 위치(지갑 잠금 뒤, 자동 확정 재검사)는 그대로다.
+- **주문 ID 파싱**: `order/service/OrderIds.positive`(ASCII 숫자·long 범위·1 이상). 호출자별 400 문구와 잠금 전 검사 순서를 유지한다.
+- **주문 상세 화면**: 납품·수정 요청·수락·거절·결제·직접 취소·구매 확정 폼을 `OrderCommandForms.tsx`로 분리했다. 잠금 ref·busy·실패·재조회는 페이지의 `run`이 계속 소유하고(`CancellationActions`와 같은 방식), 입력 초기화는 기존 시점(성공 시 전체, 실패 시 납품 입력, 재조회 성공 시 동의 체크)에 key를 바꿔 다시 마운트한다. 명령 요청 경로는 기존과 같이 화면 주소의 주문 ID를 쓴다. 다시 마운트하는 방식이라 입력란이 새로 그려지며 포커스가 풀린다(예: 납품 제출 실패 후 비워진 입력란). 입력값·요청에는 차이가 없다. 컴포넌트가 작아지며 React 순수성 lint가 렌더 중 `Date.now()`를 잡아, `orderDeadlineView`의 `now` 기본값으로 옮겼다(계산 시점 동일).
+
+검증(로컬): 백엔드 `clean build`(`lancerpick_test` 3307) 936건 통과(실패·오류·건너뜀 0, 신규 `OrderIdsTests` 포함, enum 매핑의 `ddl-auto=validate` 기동 포함). 프런트 typecheck·lint·`test:api` 227건·build 통과(기존 번들 크기 경고 유지). 실행하지 않은 검증: 실제 브라우저 확인(폼 분리 후 연속 제출·실패 후 재조회 전 제출 차단은 자동 브라우저 테스트가 없어 미확인), 원격 CI.
+
+main `f5e1618`(#125 관리자 계약 PDF 운영 조회) 통합: 이 문서 최상단 기록 충돌은 양측을 보존했다. 새 `AdminContractPdfQueryService`(김창재 영역)와 그 단위 테스트의 `findByOrderIdAndStatus(..., "PENDING")`를 `CancellationRequestStatus.PENDING`으로 바꿨다(컴파일 대응, 동작 동일). `DefaultCatalogApiTests`의 mock 추가는 양쪽이 자동 병합됐다. 병합 후 백엔드 `clean build`(로컬 `lancerpick_test`) 951건 통과(실패·오류·건너뜀 0). 프런트는 main 변경이 없어 기존 결과를 유지한다.
+
 ## 충전 복구 실제 토스 조회 확인 — 2026-11-09
 
 기존 완료 테스트 결제를 개인 DB에서 읽기만 하고, 실제 토스 HTTPS 조회 결과로 격리 MySQL의 UNKNOWN 충전을 Batch 복구했다. 검증 지갑 지급·원장 1회와 두 번째 Job의 추가 조회/지급 없음, Batch 메타데이터 비밀정보 미저장을 확인했다(로컬 외부 연동 1건 통과). 신규 승인·취소·개인 DB 변경은 없으며 실제 스케줄/장애 주입·관리자 연결은 미검증이다. [환경·재현 범위·한계](wallet-topup-recovery-batch.md#실제-토스-테스트-조회-후속-검증--2026-11-09).

@@ -8,6 +8,7 @@ import com.example.lancerpick.contract.entity.OrderContract;
 import com.example.lancerpick.contract.repository.OrderContractRepository;
 import com.example.lancerpick.member.entity.MemberRole;
 import com.example.lancerpick.member.repository.MemberRepository;
+import com.example.lancerpick.order.entity.CancellationRequestStatus;
 import com.example.lancerpick.order.entity.Order;
 import com.example.lancerpick.order.entity.OrderStatus;
 import com.example.lancerpick.order.repository.CancellationRequestRepository;
@@ -96,7 +97,7 @@ public class AdminContractPdfQueryService {
             .contains(order.getStatus())
         || order.getAcceptedAt() == null
         || order.getPaidAt() != null) return blocked(BlockReason.ORDER_NOT_WRITABLE);
-    if (!cancellations.findByOrderIdAndStatus(order.getId(), "PENDING").isEmpty())
+    if (!cancellations.findByOrderIdAndStatus(order.getId(), CancellationRequestStatus.PENDING).isEmpty())
       return blocked(BlockReason.CANCELLATION_PENDING);
     if (contract.getUpdatedAt().isAfter(now)) return blocked(BlockReason.CLOCK_BEFORE_UPDATE);
     return switch (contract.getStatus()) {
