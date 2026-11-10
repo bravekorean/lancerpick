@@ -2,6 +2,8 @@
 
 기준일: **2026-11-10**, 정적 대조 소스: **main a7e889b**. 현재 규칙은 해당 주제 문서에서, 날짜·커밋별 검증과 대체된 설계는 change-history.md에서 읽는다. 문서는 8개를 유지한다.
 
+회원 관리 후속: `feature/admin-member-management`에 main `fec2f40`을 반영했다. [회원 제재 API·화면](features.md#members-sanctions), [현재 반영 상태](project-progress.md#current-status), [통합 검증](change-history.md#admin-member-main-integration)을 따른다. 원본 문서를 되살리지 않고 이 통합 구조에서 관리한다.
+
 ## 어디부터 읽을지
 
 | 목적 | 문서 |

@@ -322,7 +322,7 @@ MVP 3절의 "표시 이름 수정"을 화면으로 연결했다. 서버 `PATCH /
 <a id="members-sanctions"></a>
 ### 일반 제한·보안 잠금·관리자 회원
 
-일반 제한은 로그인과 기존 거래를 허용하고 신규 주문·판매자 수락을 차단한다. 상품 등록 제재 검사는 main 미반영 로컬 브랜치 범위다. 보안 잠금은 새 로그인/기존 인증과 구매자 자동 확정 타이머를 차단·중단한다. 자동 취소/환불/정산 회수는 하지 않는다. 관리자 회원 목록·검색·상세·적용/해제 HTTP/화면은 main에 없으며 [로컬 브랜치 기록](change-history.md#local-admin-member-branch)으로 보존한다. 관리자·본인 보호, 같은 요청 키·만료·교체·해제 경합을 서버에서 검증한다.
+일반 제한은 로그인과 기존 거래를 허용하고 신규 주문·상품 등록·판매자 수락을 차단한다. 보안 잠금은 새 로그인/기존 인증과 구매자 자동 확정 타이머를 차단·중단한다. 자동 취소/환불/정산 회수는 하지 않는다. 관리자 회원 목록·검색·상세·적용/해제 API와 `/admin/members` 화면은 `feature/admin-member-management`에 구현했으며 PR/main 반영 전이다. 관리자·본인 보호, 같은 요청 키·만료·교체·해제 경합을 서버에서 검증한다. [기존 구현 근거](change-history.md#local-admin-member-branch).
 
 #### 업무 규칙·연결
 
@@ -332,8 +332,8 @@ MVP 3절의 "표시 이름 수정"을 화면으로 연결했다. 서버 `PATCH /
 
 | 항목 | 이번 구현 | 후속 연결 |
 | --- | --- | --- |
-| B1 제재 조회 | `MemberSanctionQuery.restriction(long memberId)` | 정은찬: 주문·타이머 검사(주문 생성·판매자 수락 차단 U7 연결 2026-11-09, `order/service/NewTradeRestrictions`), 박소현: 신규 상품 활동 검사 |
-| B2 제재 명령 | `MemberSanctionCommandService.apply` / `revoke`, 관리자 DB 권한·회원 잠금·이력·중복 방지 | 황준범: 회원 관리 API·화면 |
+| B1 제재 조회 | `MemberSanctionQuery.restriction(long memberId)` | 주문·타이머 U7/U8 재사용, 황준범이 상품 등록 차단 연결(박소현 리뷰) |
+| B2 제재 명령 | `MemberSanctionCommandService.apply` / `revoke`, 관리자 DB 권한·회원 잠금·이력·중복 방지 | 황준범: 회원 관리 API·화면 연결 완료, PR 반영 전 |
 | 보안 잠금 인증 | 로그인 거절, 인증 버전 증가, 기존 HTTP/소켓 인증 재검사 경로 연결 | 실제 브라우저·소켓 폐기 확인은 별도 |
 | 타이머 중단 전달 | 커밋 후 호출, 실패/연결 전 미처리 기록, 내부 재시도 | 정은찬: `SecurityLockTimerStopper` 구현체·타이머 재검사 |
 | 만료 | 서버 UTC 시각으로 기간 종료 시 제한 없음으로 조회 | 별도 만료 Batch·행 삭제 불필요 |
@@ -341,6 +341,20 @@ MVP 3절의 "표시 이름 수정"을 화면으로 연결했다. 서버 `PATCH /
 #### API·입력·오류
 
 ##### API 계약
+
+관리자 회원 API의 공통 prefix는 `/api/admin/members`다. 로그인한 ADMIN에 더해 현재 DB 역할을 검사하며 변경은 CSRF를 요구한다. 응답은 no-store다.
+
+| 메서드·하위 경로 | 입력 | 성공 |
+| --- | --- | --- |
+| GET 목록 | q·restriction·page=0·size=20 | 200 PageResponse |
+| GET `/{memberId}` | 회원 ID | 200 member·emailVerifiedAt·serverTime·canManage·activeSanctions |
+| GET `/{memberId}/sanctions` | page·size | 200 전체 이력 PageResponse |
+| POST `/{memberId}/sanctions` | kind·reason·endsAt·requestKey | 신규/같은 요청 모두 200 `{memberId,sanctionId}` |
+| POST `/{memberId}/sanctions/{sanctionId}/revoke` | reason | 204 |
+
+q는 100 코드 포인트 이하이며 숫자만이면 회원 ID 정확 일치, 나머지는 이메일·표시 이름의 문자 그대로 부분 일치다. restriction은 생략 또는 NONE/GENERAL_RESTRICTION/SECURITY_LOCK이며 두 제재 공존 시 대표 상태로 필터링한다. page≥0, size 1~100, 최신 가입·ID 내림차순이다. ID는 JSON 문자열이다. 적용 종료 시각은 오프셋 ISO 필수·UTC 변환 후 미래 시각, requestKey는 표준 UUID다. 사유는 정규화 후 1~1000 코드 포인트, 숫자/불리언의 문자열 강제 변환은 차단한다.
+
+목록은 id/email/displayName/role/restriction/createdAt, 제재 이력은 id/kind/state/reason/appliedBy/startsAt/endsAt/revokedAt/revokedBy/revokeReason/timerStopDeliveredAt이다. 비밀번호·해시·인증 버전·요청 키는 조회하지 않는다. 해제 재시도는 최초 사유·시각을 보존하며 이전 제재 ID 해제가 교체된 새 제재를 해제하지 않는다. 본인/관리자 대상 403, 없는 회원·타 회원 제재 404, 잘못된 입력 400, 다른 조건의 같은 키 409다. 일반 권한·CSRF·상세 오류 코드는 아래 공통 계약과 기존 이력에 따른다.
 
 ##### B1: 조회 계약
 
@@ -366,7 +380,7 @@ long sanctionId = memberSanctionCommandService.apply(
 memberSanctionCommandService.revoke(adminId, memberId, sanctionId, reason);
 ```
 
-- 관리자 ID는 추후 Controller의 `CurrentMemberId.require(authentication)`에서 받는다. 요청 본문의 관리자 ID를 신뢰하지 않는다. 서비스도 DB ADMIN 권한을 확인한다. 자기 자신·관리자 계정 대상 제재는 거절한다.
+- 관리자 ID는 Controller의 `CurrentMemberId.require(authentication)`에서 받는다. 요청 본문의 관리자 ID를 신뢰하지 않는다. 서비스도 DB ADMIN 권한을 확인한다. 자기 자신·관리자 계정 대상 제재는 거절한다.
 - 사유는 정규화 후 1~1,000자, 종료 시각은 잠금 뒤 서버 시각보다 미래다. 모든 시각은 UTC LocalDateTime, 마이크로초 정밀도다.
 - 호출자는 외부 트랜잭션 없이 호출한다(`NEVER`). 서비스의 짧은 READ_COMMITTED 트랜잭션에서 회원 ID 오름차순으로 관리자 공유 잠금·대상 회원 배타 잠금을 얻는다. 주문/지갑 잠금은 이 트랜잭션에서 얻지 않는다.
 - 제재 이력 저장과 보안 잠금의 인증 버전 증가는 함께 성공·롤백한다. 버전은 만료·철회 때 감소시키지 않는다. 기존 세션은 복구되지 않고 새 로그인이 필요하다.
@@ -376,6 +390,8 @@ memberSanctionCommandService.revoke(adminId, memberId, sanctionId, reason);
 #### 화면·캐시·계정 경계
 
 ##### 화면과 요청 복구
+
+관리자 메뉴의 회원 관리에서 검색·상세·현재 제재·전체 이력·적용/해제를 제공한다. 한국 시간 입력을 UTC로 변환하며 실제 판단은 서버 시각을 따른다. 30초/포커스 재조회, 401/403 후 캐시 표시 차단, 처리 영향 확인 체크, 전송 중 반복 클릭 차단을 적용한다. 불명확한 결과는 계정별 메모리에 전체 원래 요청과 UUID를 보존해 경로 이동 후에도 같은 키로 재확인한다. 로그아웃/계정 변경 시 정리하며 브라우저 종료/새로고침을 넘는 영속 보관은 없다. 보안 잠금 타이머 전달 미완료는 경고하되 재시도 스케줄러는 별도다.
 
 #### 데이터·제약
 
