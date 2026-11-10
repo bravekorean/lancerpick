@@ -4,8 +4,19 @@
 
 ## 기록 해석
 
+<a id="security-lock-confirm-notice"></a>
+### 보안 잠금 구매자의 수동 확정 차단·사전 안내 잠금 순서 — 2026-11-10, 로컬 구현
+
+정은찬, `fix/security-lock-confirm-notice`, main `98187eb`에서 분기했다. `retryPending` 미연결이 결함이 아니라는 설명을 Codex로 반박 검토하다 확인한 두 경합을 고쳤다. 검토 중 황준범의 미전달 자동 재시도(#163)가 main에 들어와 병합했다. 아래 두 경합은 재시도 연결과 무관하게 남아 있던 문제다. 수정안은 Codex 설계 검토를 거쳤다. 모든 주문 명령을 막는 공통 잠금 일괄 차단안은 판매자 환불 승인·계약 PDF 내부 후처리까지 정책을 넓혀 기각했고, 확정 경로만 막는 안을 채택했다.
+
+- 결함 1(수동 확정): `SessionAuthVersionFilter`는 이미 통과한 요청을 되돌리지 않는다. 구매 확정 요청이 필터를 통과한 직후 관리자 보안 잠금이 커밋되면, 확정이 회원 공유 잠금을 얻은 뒤 판매자 지급(V3)·정산(V1)까지 진행됐다. `OrderCommandLocks.requireNotSecurityLocked`를 추가해, V3 `FullFundingService.confirm`과 V1 `OrderConfirmationService.confirm`이 구매자 권한 확인 직후·완료 재요청 반환과 상태 변경 전에 회원 잠금 아래에서 현재 보안 잠금을 다시 본다. 잠겨 있으면 403 `MEMBER_LOCKED`(로그인 거절과 같은 코드·문구)다. 확정이 먼저 회원 잠금을 얻으면 제재 적용이 기다리고 확정은 유지된다(소급 취소 없음). 일반 이용 제한은 검사하지 않는다.
+- 결함 2(사전 안내): `ReviewTimerService.notice()`는 주문만 잠그고 보안 잠금 이력을 조회해, 조회 직후 커밋된 잠금을 놓치고 자동 확정 예정 안내를 보낼 수 있었다. 만료·보안 중단과 같은 `lockBuyerThenOrder`(구매자 공유 → 주문 배타)로 바꿨다. 판정 직후 커밋되는 잠금과의 경합만 없애며, 안내가 먼저 직렬화되면 안내 저장 뒤 잠금이 적용될 수 있다.
+- 정책 범위(바꾸지 않음): 환불 수령자인 구매자의 보안 잠금은 판매자 승인·관리자 승인 환불을 막지 않는다. 판매자 본인 잠금 중 승인 허용 여부는 별도 정책이다. 구매자 `allowedActions`의 `CONFIRM` 노출은 상태 기반으로 유지하고 안전성은 서버 재검사가 맡는다.
+- 정정: 전달 실패 영향은 표시 지연만이 아니다. 타이머마다 별도 트랜잭션이라 일부만 중단될 수 있고, 중단 후 같은 기산점 재시작은 409 `TIMER_ADMIN_STOPPED`·해제 후 자동 재개 없음이다. #163 자동 재시도로 미전달 상태는 다음 주기에 정리되며, 자동 확정 오지급은 만료 재검사로 계속 막는다.
+- 검증: 통합 테스트 2건(V3: 잠금 뒤 서비스 직접 호출 확정 403·지급 없음·해제 후 확정·판매자 잠금은 영향 없음, V1: 같은 조건에서 정산 없음·해제 후 정산 1건)과 단위 1건(보안 잠금 403, 일반 제한·없음 통과)을 추가했다. 로컬 테스트 DB(3307)에서 전체 `clean build` **1,075건 통과**(실패·오류·건너뜀 0). #163 병합 후 `order.*`·`member.*` 관련 **480건 통과**(실패 0). API 경로·DB·Flyway 변경 없음(구매 확정의 403 `MEMBER_LOCKED` 응답 추가). 원격 CI·PR은 별도다.
+
 <a id="order-lock-common"></a>
-### 계약·채팅 잠금 공통화(R1) — 2026-11-10, 로컬 구현
+### 계약·채팅 잠금 공통화(R1) — 2026-11-10, main 반영(#161)
 
 정은찬, `refactor/order-lock-common`, main `3d775e5`에서 분기했다. 원래 황준범 구현·정은찬 리뷰로 발표 뒤로 미뤘던 작업인데, 정은찬이 직접 맡아 발표 전에 진행했다. [§14.1 조건](#b-988-0)을 따랐다.
 
@@ -13,7 +24,7 @@
 - `OrderCommandLocks`에 두 메서드를 추가했다. `lockParticipantOrder(memberId, orderId, notFound)`는 404 문구만 호출자가 정한다(채팅 "주문 대화를 찾을 수 없습니다."). `lockParticipantOrderHidingActor`는 회원이 없을 때도 401 대신 호출자의 404를 던진다. 계약 문서 경로의 기존 응답("계약서를 찾을 수 없습니다.")을 유지하기 위해서다.
 - 계약 경로는 V2 계약 주문도 다루므로 V1·V3 필터가 있는 `lockFulfillmentOrder`를 쓰지 않는다. 계약 서비스의 401/404 문구는 공통 잠금과 원래 같았다.
 - 잠금 없는 읽기(계약 문서 조회·채팅 목록)는 바꾸지 않았다. 후기 작성(`ReviewService`, 박소현 영역)은 실행 회원 엔티티를 응답에 쓰므로 이번 범위에서 뺐다. 관리자·시스템 경로(`findActorForShare`·`findForSystemUpdate`)도 대상이 아니다.
-- 검증: `OrderCommandLocksTests` 단위 5건(잠금 순서, 회원 없음 401, 기본·호출자 404 문구, 회원 없음을 404로 숨기기)을 추가했다. 로컬 테스트 DB(3307)에서 `contract.*`·`chat.*`·`DefaultCatalogApiTests`·`OrderDecisionApiIntegrationTests`와 함께 **113건 통과**(실패·오류·건너뜀 0), 이어서 전체 `clean build` **1,072건 통과**(실패·오류·건너뜀 0). Codex 적대 리뷰 approve(지적 없음). API·DB·응답 형식 변경 없음. 원격 CI·PR은 별도다.
+- 검증: `OrderCommandLocksTests` 단위 5건(잠금 순서, 회원 없음 401, 기본·호출자 404 문구, 회원 없음을 404로 숨기기)을 추가했다. 로컬 테스트 DB(3307)에서 `contract.*`·`chat.*`·`DefaultCatalogApiTests`·`OrderDecisionApiIntegrationTests`와 함께 **113건 통과**(실패·오류·건너뜀 0), 이어서 전체 `clean build` **1,072건 통과**(실패·오류·건너뜀 0). Codex 적대 리뷰 approve(지적 없음). API·DB·응답 형식 변경 없음. main 병합(#161 `98187eb`).
 
 <a id="order-funds-time-refactor"></a>
 ### 주문 금액 경로 처리 시각 보완·리팩토링 — 2026-11-10, main 반영(#160)
@@ -25,7 +36,7 @@
 - 검증: 회귀 테스트 2건(관리자 승인·V1 판매자 환불, 지갑 잠금 직전에 같은 구매자의 다른 주문 결제를 별도 트랜잭션으로 커밋)을 추가했다. 수정 전 코드에서는 두 건 모두 실패했고, 수정 후 로컬 테스트 DB(3307)에서 `order.*`·`payment.*` **415건 통과**(실패·오류·건너뜀 0). 이어서 전체 `clean build` **1,063건 통과**(실패·오류·건너뜀 0). API·DB·Flyway·응답 형식 변경 없음. main 병합(#160 `3d775e5`), 원격 CI 결과는 PR 기록을 따른다.
 
 <a id="security-lock-delivery-retry"></a>
-### 보안 잠금 미전달 자동 재시도 — 2026-11-10, 로컬 구현
+### 보안 잠금 미전달 자동 재시도 — 2026-11-10, main 반영(#163)
 
 황준범, `feature/security-lock-delivery-retry`, main `db92468`(#159) 기준. 사용자 요청으로 미연결 상태였던 전달 재시도를 진행했다. 기본 30초·50건, 전용 스레드·서버 내부 호출로 구현하며 관리자 수동 재처리(K6)·Redis·Spring Batch 작업으로 확대하지 않는다.
 
@@ -35,7 +46,7 @@
 
 관련 검증 59건 통과 후 DB 트랜잭션 시작 장애의 빠른 배치 중단도 보완하고, 최종 소스의 전체 백엔드 `clean build`를 격리 네이티브 MySQL 8.4에서 재실행해 **1,068건 통과**(실패·오류·건너뜀 0)했다. Flyway V1~V11·JPA validate를 포함한다. 검사 수는 합산하지 않는다.
 
-전용 스케줄러 실제 실행·비활성/demo 제외·배치 크기 검증·중복 진입·커서 실패/순회·만료/해제된 미전달 복구·실제 타이머 중단 후 표식 유실 시 이력/알림/금액 중복 방지를 확인했다. 같은 완료 표식의 재기록은 0행이며 최초 시각과 해제 기록·인증 버전을 보존한다. 기존 관리자 제재·주문/타이머·결제/환불 경합 검증도 전체 검사에 포함된다. 프런트·공개 API 변경은 없어 프런트 검사는 재실행하지 않았다. 임시 MySQL은 종료했고 개인 개발 DB·실제 장애 중 프로세스 강제 종료·원격 CI 검증으로 확대하지 않는다. main 반영·원격 CI 상태는 별도다.
+전용 스케줄러 실제 실행·비활성/demo 제외·배치 크기 검증·중복 진입·커서 실패/순회·만료/해제된 미전달 복구·실제 타이머 중단 후 표식 유실 시 이력/알림/금액 중복 방지를 확인했다. 같은 완료 표식의 재기록은 0행이며 최초 시각과 해제 기록·인증 버전을 보존한다. 기존 관리자 제재·주문/타이머·결제/환불 경합 검증도 전체 검사에 포함된다. 프런트·공개 API 변경은 없어 프런트 검사는 재실행하지 않았다. 임시 MySQL은 종료했고 개인 개발 DB·실제 장애 중 프로세스 강제 종료·원격 CI 검증으로 확대하지 않는다. main 병합(#163 `833f9ee`), 원격 CI 결과는 PR 기록을 따른다.
 
 운영 코드는 그대로 두고, 같은 DB를 사용하는 독립 스케줄러 객체 두 개의 동시 호출 테스트를 추가했다. 최종 관련 **60건 통과**(실패·오류·건너뜀 0). 커밋 후 콜백을 실행하지 못한 상황을 재현해 실제 타이머가 한 번만 ADMIN_STOP되고 이력·알림 1건, 판매자 잔액·보관금·주문 상태·인증 버전이 보존되는 것을 확인했다. 이는 같은 JVM의 별도 스레드 경합이며 실제 다중 서버 배포 검증과 구분한다. 앞선 전체 1,068건과 합산하지 않는다.
 
@@ -5712,7 +5723,7 @@ API 명세 4·10·11절과 기존 SQL을 바탕으로 `OrderCreationService.crea
 <summary>기록 기준일 2026-11-10 — 2개 고유 기록 블록</summary>
 
 <a id="existing-email-20261110"></a>
-### 기존 회원 이메일 인증 전환 — 2026-11-10 (`feature/existing-email-verification`, 김창재)
+### 기존 회원 이메일 인증 전환 — 2026-11-10 (`feature/existing-email-verification`, 김창재), main 반영(#162)
 
 - 결정 근거: 3인 설계 §5.2 "기존 회원은 검증 증거가 없으므로 일괄 인증하지 않고, 로그인 후 별도 인증을 마치면 기록"과 §7.1(목적 분리·15분·60초/시간당 5회). V5 `account_challenges`의 `EXISTING_EMAIL` 목적과 `members.email_verified_at`을 그대로 쓴다. 새 DDL·Flyway 없음.
 - 구현: `ExistingEmailVerificationService`·`ExistingEmailVerificationController`(`/api/me/email-verification-requests`, `/api/me/email-verifications`), `AccountChallenge.existingEmail`·`existingEmailRejection`, `Member.verifyEmail`, 메일 `ExistingEmailMailContent`, `MemberResponse.emailVerified` 추가. 화면은 내 정보 "이메일 인증" 칸(`EmailVerificationCard`)과 링크 화면 `/mypage/email-verification`.
@@ -5720,7 +5731,7 @@ API 명세 4·10·11절과 기존 SQL을 바탕으로 `OrderCreationService.crea
 - 검증: PR 본문에 기록한다.
 
 <a id="account-guide-20261110"></a>
-### 아이디 안내 API·화면 — 2026-11-10 (`feature/account-id-guide`, 김창재)
+### 아이디 안내 API·화면 — 2026-11-10 (`feature/account-id-guide`, 김창재), main 반영(#155)
 
 - 결정 근거: 3인 설계 1절 "아이디 찾기는 이메일이 아이디라는 안내로 한정, 잊어버린 이메일 복구는 보류"와 2026-11-06 정은찬의 C3 결정(토큰 없는 안내 메일은 `AccountMail.untracked`, DB 기록 없음)을 그대로 구현했다. 새 테이블·Flyway 없음.
 - 구현: `POST /api/auth/account-guide-requests`(`AccountGuideController`·`AccountGuideService`), 메일 내용 `AccountGuideMailContent`, 토큰 없는 화면 링크용 `FrontendLinks.pageLink` 추가, `SecurityConfig`에 비로그인 POST 경로 1줄 허용(CSRF 유지). 화면 `/account-guide`(`AccountGuidePage`, 공통 `EmailLinkRequestForm` 재사용)와 로그인 화면 링크.
