@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useParams } from 'react-router'
 import { ApiError, isUnauthorized } from '../../../shared/api/client'
 import { Button } from '../../../shared/components/Button'
+import { Icon } from '../../../shared/components/Icon'
 import { formatDateTime } from '../../../shared/lib/format'
 import { loginPath } from '../../auth/session'
 import { useCurrentMember } from '../../auth/queries'
@@ -87,11 +88,11 @@ function OrderDetail({ id }: { id: string }) {
   if (!query.data) return <p className={styles.page} role="status">주문을 불러오는 중입니다.</p>
 
   const order = query.data
-  const view = orderDetailPresentation(order)
+  const isSeller = member.isSuccess && member.data?.id === order.seller.id
+  const view = orderDetailPresentation(order, isSeller)
   const deadlines = orderDeadlineView(order)
   const disabled = busy || !!failure || query.isFetching
   const forms = { orderId: id, order, disabled, run }
-  const isSeller = member.isSuccess && member.data?.id === order.seller.id
   const hasContract = order.policyVersion !== 'LEGACY_V1'
   const hasPrimaryAction = ['DELIVER', 'REQUEST_REVISION', 'ACCEPT', 'PAY', 'CONFIRM']
     .some(action => order.allowedActions.includes(action))
@@ -165,7 +166,7 @@ function OrderDetail({ id }: { id: string }) {
             {order.review.content && <p className={styles.text}>{order.review.content}</p>}
           </section>}
           <details className={styles.secondaryActions} id="order-secondary-actions" open={view.pendingCancellation || undefined}>
-            <summary>취소·문의 <span aria-hidden="true">⌄</span></summary>
+            <summary>취소·문의 <Icon name="chevron" size={18} /></summary>
             <div>
               <RejectForm key={`reject-${resets.success}`} {...forms} />
               <CancelForm key={`cancel-${resets.success}`} {...forms} />
