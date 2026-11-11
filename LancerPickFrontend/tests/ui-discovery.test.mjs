@@ -51,7 +51,7 @@ test('a failed member recheck hides cached names and does not enable seller link
     c.getQueryCache().find({ queryKey: ['auth', 'me'] }).setState({ status: 'error', error: new ApiError(401, { code: 'AUTHENTICATION_REQUIRED', message: '로그인 필요' }) })
   })
   assert.doesNotMatch(html, /판매회원|href="\/mypage\/products/)
-  assert.match(html, /회원 정보를 확인하지 못했습니다/)
+  assert.match(html, /회원 정보를 확인하지 못했어요/)
 })
 
 test('catalog is a dedicated public page with 12-item pagination and retained filter values', () => {
@@ -63,7 +63,7 @@ test('catalog is a dedicated public page with 12-item pagination and retained fi
   })
   assert.match(html, /<h1>서비스 둘러보기<\/h1>/)
   assert.match(html, /30개의 서비스/)
-  assert.match(html, /현재 요청 2페이지/)
+  assert.match(html, /2페이지 \/ 총 3페이지/)
   assert.match(html, /value="10000"/)
   assert.doesNotMatch(html, /hero-title|HOW IT WORKS/)
 })

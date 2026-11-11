@@ -18,6 +18,7 @@ import { getSellerSession, saveSellerProfile } from '../api'
 import type { SellerProfile, SellerProfileInput, SellerSession } from '../types'
 import { validateSellerProfile, type ProfileErrors } from '../validation'
 import styles from './SellerProfilePage.module.css'
+import { PageHeading } from '../../../shared/components/PageHeading'
 
 const expired = (error: unknown) =>
   isUnauthorized(error)
@@ -122,7 +123,7 @@ function ConnectedProfile({
     return (
       <AsyncState
         title="로그인 계정을 다시 확인해 주세요"
-        description="계정이 바뀌었을 수 있어 프로필을 표시하지 않습니다. 페이지를 새로고침해 주세요."
+        description="계정이 바뀌었을 수 있어 프로필을 표시하지 않아요. 페이지를 새로고침해 주세요."
       />
     )
   if (profile.isPending)
@@ -312,17 +313,9 @@ function LoginNotice() {
 function Layout({ children }: { children: ReactNode }) {
   return (
     <section className={styles.page}>
-      <nav className={styles.breadcrumb} aria-label="현재 위치">
-        <Link to="/">홈</Link>
-        <span>/</span>
-        <Link to="/mypage">마이페이지</Link>
-        <span>/ 판매자 프로필</span>
-      </nav>
-      <header className={styles.heading}>
-        <p>SELLER PROFILE</p>
-        <h1>판매자 프로필 관리</h1>
-        <span>나의 전문성을 소개하고, 함께할 다음 일을 준비하세요.</span>
-      </header>
+      <PageHeading eyebrow="SELLER PROFILE" title="판매자 프로필 관리">
+        <p>나의 전문성을 소개하고, 함께할 다음 일을 준비하세요.</p>
+      </PageHeading>
       <div className={styles.card}>{children}</div>
     </section>
   )

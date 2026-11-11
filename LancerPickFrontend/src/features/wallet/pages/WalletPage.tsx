@@ -3,13 +3,14 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { isUnauthorized } from '../../../shared/api/client'
 import { AsyncState } from '../../../shared/components/AsyncState'
-import { Button } from '../../../shared/components/Button'
 import { formatDateTime, formatWon } from '../../../shared/lib/format'
 import { usePageSearchParam } from '../../../shared/lib/usePageSearchParam'
 import type { PageResponse } from '../../../shared/api/types'
 import { previewBalance, previewEntries } from '../preview'
 import type { WalletBalance, WalletEntry, WalletEntryType } from '../types'
 import styles from './WalletPage.module.css'
+import { PageHeading } from '../../../shared/components/PageHeading'
+import { Pager } from '../../../shared/components/Pager'
 
 const labels: Record<WalletEntryType, string> = {
   INITIAL_GRANT: '가입 적립금',
@@ -61,7 +62,7 @@ function WalletGuestPage() {
       </Link>
       <AsyncState
         title="로그인 후 지갑을 확인할 수 있어요"
-        description="로그인한 계정의 적립금과 이용 내역을 표시합니다."
+        description="로그인한 계정의 적립금과 이용 내역을 표시해요."
       />
       <Link className={styles.previewLink} to="/login">
         로그인으로 이동 →
@@ -89,7 +90,7 @@ export function ConnectedWalletPage({ sessionKey }: { sessionKey: string }) {
       <WalletLayout>
         <AsyncState
           title="다시 로그인해 주세요"
-          description="로그인 상태를 확인할 수 없어 잔액과 내역을 표시하지 않습니다."
+          description="로그인 상태를 확인할 수 없어 잔액과 내역을 표시하지 않아요."
         />
         <Link className={styles.previewLink} to="/login">
           로그인으로 이동 →
@@ -153,13 +154,13 @@ export function WalletPreviewPage() {
 
 function WalletLayout({ children, preview = false }: { children: ReactNode; preview?: boolean }) {
   return <section className={styles.page}>
-    {preview && <div className={styles.notice} role="note"><strong>화면 미리보기</strong><span>아래 잔액과 내역은 예시입니다. 실제 계정·결제 정보가 아닙니다.</span><Link to="/mypage">미리보기 나가기</Link></div>}
-    <div className={styles.sectionHeading}><h1>적립금 · 이용 내역</h1><p>사용 가능한 잔액과 적립금 변동을 확인하세요.</p></div>
+    {preview && <div className={styles.notice} role="note"><strong>화면 미리보기</strong><span>아래 잔액과 내역은 예시예요. 실제 계정·결제 정보가 아니에요.</span><Link to="/mypage">미리보기 나가기</Link></div>}
+    <PageHeading eyebrow="MY WALLET" title="적립금 · 이용 내역"><p>사용 가능한 잔액과 적립금 변동을 확인하세요.</p></PageHeading>
     {children}
     <div className={styles.guide}><strong>적립금 이용 안내</strong><ul>
-      <li>가입 시 적립금 1,000,000원이 한 번 지급됩니다.</li>
-      <li>적립금은 현금 가치가 없으며 출금을 지원하지 않습니다.</li>
-      <li>새 전자계약 거래의 판매 수익은 수수료를 제외하고 적립금으로 지급됩니다. 기존 거래의 수익은 별도 기록으로 유지됩니다.</li>
+      <li>가입 시 적립금 1,000,000원이 한 번 지급돼요.</li>
+      <li>적립금은 현금 가치가 없으며 출금을 지원하지 않아요.</li>
+      <li>새 전자계약 거래의 판매 수익은 수수료를 제외하고 적립금으로 지급돼요. 기존 거래의 수익은 별도 기록으로 유지돼요.</li>
     </ul></div>
   </section>
 }
@@ -216,7 +217,7 @@ function EntryList({
       {data.items.length === 0 ? (
         <AsyncState
           title="표시할 이용 내역이 없어요"
-          description="적립금의 지급·결제·환불 내역이 여기에 표시됩니다."
+          description="적립금의 지급·결제·환불 내역이 여기에 표시돼요."
         />
       ) : (
         <ul className={styles.entries}>
@@ -256,36 +257,7 @@ function EntryList({
           ))}
         </ul>
       )}
-      {data.items.length === 0 && data.page > 0 && (
-        <Button
-          variant="secondary"
-          disabled={isFetching}
-          onClick={() => onPageChange(0)}
-        >
-          첫 페이지로
-        </Button>
-      )}
-      {data.totalPages > 1 && data.page < data.totalPages && (
-        <nav className={styles.pagination} aria-label="이용 내역 페이지">
-          <Button
-            variant="secondary"
-            disabled={isFetching || data.page === 0}
-            onClick={() => onPageChange(data.page - 1)}
-          >
-            이전
-          </Button>
-          <span aria-live="polite">
-            {data.page + 1} / {data.totalPages}
-          </span>
-          <Button
-            variant="secondary"
-            disabled={isFetching || data.page + 1 >= data.totalPages}
-            onClick={() => onPageChange(data.page + 1)}
-          >
-            다음
-          </Button>
-        </nav>
-      )}
+      <Pager page={data.page} totalPages={data.totalPages} busy={isFetching} onPage={onPageChange} label="이용 내역 페이지" />
     </section>
   )
 }

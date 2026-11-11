@@ -3,20 +3,22 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router'
 import { isUnauthorized } from '../../../shared/api/client'
 import { AsyncState } from '../../../shared/components/AsyncState'
-import { Button } from '../../../shared/components/Button'
 import { formatWon } from '../../../shared/lib/format'
 import { usePageSearchParam } from '../../../shared/lib/usePageSearchParam'
 import { getFavorites } from '../favoritesApi'
 import { useMyProductsSession } from '../queries'
 import styles from './MyProductsPage.module.css'
+import { PageHeading } from '../../../shared/components/PageHeading'
+import { Pager } from '../../../shared/components/Pager'
 
 export function MyFavoritesPage() {
   const session = useMyProductsSession()
   const location = useLocation()
   const path = location.pathname + location.search
   return <section className={styles.page}>
-    <Link to="/mypage">← 마이페이지</Link>
-    <h1>내 관심 상품</h1>
+    <PageHeading eyebrow="FAVORITES" title="내 관심 상품">
+      <p>관심 상품으로 저장한 서비스 중 현재 공개·판매 중인 상품을 보여 줘요.</p>
+    </PageHeading>
     {isUnauthorized(session.error) ? <LoginNotice path={path} />
       : session.isError ? <AsyncState title="계정을 확인하지 못했어요" error={session.error} onRetry={() => { void session.refetch() }} />
         : !session.data || session.isFetching ? <AsyncState title="계정을 확인하고 있어요" />
@@ -41,14 +43,8 @@ function FavoritesList({ memberId, path }: { memberId: string; path: string }) {
     {items.length > 0 ? <ul className={styles.list}>{items.map(product => <li className={styles.card} key={product.id}>
       <h2><Link to={`/products/${product.id}`} state={{ from: path }}>{product.title}</Link></h2>
       <p>{product.category.name} · {product.seller.displayName} · {formatWon(product.priceAmount)} · {product.durationDays}일</p>
-    </li>)}</ul> : page === 0
-      ? <AsyncState title="표시할 관심 상품이 없어요" />
-      : <Button variant="secondary" onClick={() => setPage(0)}>첫 페이지로</Button>}
-    {(totalPages > 1 || page > 0) && <nav className={styles.pagination} aria-label="관심 상품 페이지">
-      <Button variant="secondary" disabled={page === 0 || favorites.isFetching} onClick={() => setPage(page - 1)}>이전</Button>
-      <span>{page + 1}페이지</span>
-      <Button variant="secondary" disabled={page + 1 >= totalPages || favorites.isFetching} onClick={() => setPage(page + 1)}>다음</Button>
-    </nav>}
+    </li>)}</ul> : <AsyncState title={page === 0 ? '표시할 관심 상품이 없어요' : '이 페이지에 관심 상품이 없어요'} />}
+    <Pager page={page} totalPages={totalPages} busy={favorites.isFetching} onPage={setPage} label="관심 상품 페이지" />
   </>
 }
 
