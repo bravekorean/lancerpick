@@ -1113,6 +1113,10 @@ MySQL을 기준 DB로 사용하고 Flyway로 스키마 변경을 관리한다.
 데이터가 있는 환경의 구조 변경은 기존 데이터 보존·변환 방법까지 검토한다.
 
 <a id="events"></a>
+### V3 결제의 잠금 재사용
+
+`OrderPaymentService.pay()`에서 회원 공유 잠금 → 주문 배타 잠금을 얻은 V3 경로는 잠긴 주문을 `FullFundingService.payLocked()`에 전달한다. 이 package-private 메서드는 기존 트랜잭션을 요구(`MANDATORY`)하며 정책·구매자·계약·금액·원장 검증과 지갑 잠금을 유지한다. 공개 `FullFundingService.pay(memberId, orderId)`는 단독 호출에도 직접 잠금을 획득한다. 이는 필요한 잠금을 제거하는 변경이 아니라 같은 트랜잭션의 반복 잠금 조회를 줄이는 변경이다. [동시 결제 측정·검증 기록](change-history.md#payment-concurrency-benchmark)을 참고한다.
+
 ## 이벤트 ID·버전·오류
 
 ### 업무 규칙·연결

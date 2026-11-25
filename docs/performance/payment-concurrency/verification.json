@@ -1,0 +1,83 @@
+{
+  "date": "2026-11-25",
+  "timezone": "Asia/Seoul",
+  "baseline_commit": "e00fb18",
+  "candidate": "local changes in OrderPaymentService and FullFundingService",
+  "scope": "real MySQL, Spring transactional service; not HTTP or external payment provider",
+  "java": "Temurin 25.0.5.1+2",
+  "mysql": "8.4.13",
+  "gradle": "9.8.2",
+  "runs": {
+    "baseline": {
+      "measurements": 36,
+      "requests": 864,
+      "unexpected_errors": 0
+    },
+    "optimized": {
+      "measurements": 36,
+      "requests": 864,
+      "unexpected_errors": 0
+    },
+    "baseline-repeat": {
+      "measurements": 36,
+      "requests": 864,
+      "unexpected_errors": 0
+    },
+    "optimized-repeat": {
+      "measurements": 36,
+      "requests": 864,
+      "unexpected_errors": 0
+    }
+  },
+  "regression": {
+    "tests": 47,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "regression_suites": [
+    {
+      "name": "com.example.lancerpick.order.FullFundingTradeIntegrationTests",
+      "tests": "15",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.example.lancerpick.order.OrderPaymentIntegrationTests",
+      "tests": "13",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.example.lancerpick.order.service.FullFundingTransactionBoundaryIntegrationTests",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.example.lancerpick.order.service.OrderCommandLocksTests",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.example.lancerpick.order.V3ActivationGateIntegrationTests",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.example.lancerpick.payment.FullFundingIntegrationTests",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    }
+  ],
+  "latency_conclusion": "Mixed direction for fresh payments across pairs; no general latency improvement claim."
+}

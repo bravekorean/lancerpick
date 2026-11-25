@@ -41,6 +41,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -83,11 +84,12 @@ public class FullFundingService {
             .orElseThrow(() ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "주문을 찾을 수 없습니다."));
-    if (paymentRepository.findByOrderId(orderId).isEmpty()) {
+    var existingPayment = records.findValidatedPayment(order);
+    if (existingPayment.isEmpty()) {
       return new OrderFundsResponse(
           "NOT_PAID", order.getPriceAmount(), 0, 0, null, null, null, null);
     }
-    var payment = records.requirePayment(order);
+    var payment = existingPayment.get();
     var orderFunds = records.requireOrderFunds(order, payment);
     var closure = orderClosureRepository.findByOrderId(orderId).orElse(null);
     if ((orderFunds.getStatus() == OrderFundsStatus.HELD) != (closure == null)) {
@@ -107,10 +109,22 @@ public class FullFundingService {
   }
 
   public OrderDetailResponse pay(long memberId, long orderId) {
-    var order = lockOrder(memberId, orderId);
+    return payLocked(memberId, lockOrder(memberId, orderId));
+  }
+
+  /**
+   * OrderPaymentService가 같은 트랜잭션에서 회원 공유 잠금 → 주문 배타 잠금을 얻은 경로.
+   * 잠긴 엔티티를 재사용해 동일 회원·주문을 다시 SELECT FOR SHARE/UPDATE 하지 않는다.
+   * 외부 진입점 pay(memberId, orderId)는 계속 스스로 잠금을 획득한다.
+   */
+  @Transactional(propagation = Propagation.MANDATORY)
+  OrderDetailResponse payLocked(long memberId, Order order) {
+    requireFullFunding(order);
+    long orderId = order.getId();
     requireRole(order.getBuyerId() == memberId);
-    if (paymentRepository.findByOrderId(orderId).isPresent()) {
-      var payment = records.requirePayment(order);
+    var existingPayment = records.findValidatedPayment(order);
+    if (existingPayment.isPresent()) {
+      var payment = existingPayment.get();
       var orderFunds = records.requireOrderFunds(order, payment);
       records.requirePaymentEntry(order, payment);
       if (payment.status() == PaymentStatus.REFUNDED) {
@@ -417,11 +431,15 @@ public class FullFundingService {
   // public 진입점이 단독 호출돼도 잠금 순서와 V3·금액 검증을 보장한다. 호출 서비스가 이미 잠갔다면 같은 트랜잭션의 재잠금이다.
   private Order lockOrder(long memberId, long orderId) {
     var order = commandLocks.lockParticipantOrder(memberId, orderId);
+    requireFullFunding(order);
+    return order;
+  }
+
+  private void requireFullFunding(Order order) {
     if (!order.isFullFunding()) {
       throw conflict("ORDER_POLICY_NOT_READY", "결제 금액 보관 정책 주문이 아닙니다.");
     }
     FullFundingPolicy.requireAmount(order.getPriceAmount());
-    return order;
   }
 
   private void requireNoPendingCancellation(Order order) {

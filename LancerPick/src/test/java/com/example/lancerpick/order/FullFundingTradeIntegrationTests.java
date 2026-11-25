@@ -266,6 +266,18 @@ class FullFundingTradeIntegrationTests {
   }
 
   @Test
+  void directFundingEntryPointStillChecksRoleAndPaysExactlyOnce() {
+    error(() -> funding.pay(seller, id), "FORBIDDEN");
+    funding.pay(buyer, id);
+    funding.pay(buyer, id);
+    payments.pay(buyer, str(), true);
+    assertThat(jdbc.queryForObject("SELECT balance FROM wallets WHERE member_id=?", Long.class, buyer))
+        .isEqualTo(Wallet.INITIAL_GRANT_AMOUNT - AMOUNT);
+    assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payments WHERE order_id=?", Long.class, id))
+        .isEqualTo(1);
+  }
+
+  @Test
   void httpPaymentIgnoresClientMoneyAndCompletionPaysSellerExactlyOnce() throws Exception {
     mvc.perform(
             post("/api/orders/" + id + "/payment")

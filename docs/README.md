@@ -17,6 +17,7 @@ K6 관리자 재처리: [감사 DB·내부 연결 기반](features.md#admin-acti
 | 도메인별 현재 규칙·API/입력·화면·오류 | [features.md](features.md) |
 | 테이블·컬럼·관계·제약·인덱스·마이그레이션 | [database-design.md](database-design.md) |
 | 왜 바뀌었는지·당시 검증·실패/보완·과거 계획 | [change-history.md](change-history.md) |
+| 동시 결제·충전 복구 검증 결과와 원본 CSV | [금융 검증 결과 요약](change-history.md#finance-verification-summary) |
 | 목차·관리 원칙·원본 이동 경로 | [README.md](README.md) |
 
 현재 구현이 궁금하면 [진행 현황](project-progress.md#current-status), 특정 기능을 수정하려면 [기능 주제별 목차](features.md#주제별-목차), 예전 테스트 수·커밋·설계 근거가 필요할 때만 [이력 목차](change-history.md#이력-목차)를 연다.

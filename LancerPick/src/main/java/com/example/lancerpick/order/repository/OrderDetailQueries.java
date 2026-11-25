@@ -21,16 +21,28 @@ public class OrderDetailQueries {
     public OrderDetailResponse forParticipant(long orderId,long memberId){
         if(em.isJoinedToTransaction())em.flush();
         var o=QOrder.order;var s=QOrderSnapshot.orderSnapshot;var b=new QMember("buyer");var seller=new QMember("seller");
-        var row=query.select(o,s,b,seller).from(o).join(b).on(b.id.eq(o.buyerId)).join(seller).on(seller.id.eq(o.sellerId)).leftJoin(s).on(s.orderId.eq(o.id))
-                .where(o.id.eq(orderId).and(o.buyerId.eq(memberId).or(o.sellerId.eq(memberId)))).fetchOne();
+        var r = QRevisionRequest.revisionRequest;
+        var p = QPayment.payment;
+        var rev = QReview.review;
+        // Each optional record is unique by order_id. Keep the collections below separate
+        // so histories, deliveries, and cancellations cannot multiply one another's rows.
+        var row = query.select(o, s, b, seller, r, p, rev)
+                .from(o)
+                .join(b).on(b.id.eq(o.buyerId))
+                .join(seller).on(seller.id.eq(o.sellerId))
+                .leftJoin(s).on(s.orderId.eq(o.id))
+                .leftJoin(r).on(r.orderId.eq(o.id))
+                .leftJoin(p).on(p.orderId.eq(o.id))
+                .leftJoin(rev).on(rev.orderId.eq(o.id))
+                .where(o.id.eq(orderId).and(o.buyerId.eq(memberId).or(o.sellerId.eq(memberId))))
+                .fetchOne();
         if(row==null)throw new BusinessException(HttpStatus.NOT_FOUND,"RESOURCE_NOT_FOUND","주문을 찾을 수 없습니다.");
         var order=row.get(o);var snap=row.get(s);var buyer=row.get(b);var vendor=row.get(seller);
         if(snap==null)throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,"DATA_INTEGRITY_ERROR","주문 조건 기록을 확인해야 합니다.");
         var d=QDelivery.delivery;
         var deliveries=query.selectFrom(d).where(d.orderId.eq(orderId)).orderBy(d.sequenceNo.asc(),d.id.asc()).fetch().stream()
                 .map(v->new OrderDetailResponse.Delivery(id(v.getId()),v.getSequenceNo(),v.getDescription(),v.getResultUrl(),at(v.getSubmittedAt()))).toList();
-        var r=QRevisionRequest.revisionRequest;
-        var revision=query.selectFrom(r).where(r.orderId.eq(orderId)).fetchOne();
+        var revision = row.get(r);
         OrderDetailResponse.RevisionRequest revisionResponse=revision==null?null:new OrderDetailResponse.RevisionRequest(id(revision.getId()),id(revision.getDeliveryId()),revision.getReason(),at(revision.getRequestedAt()),at(revision.getDueAt()));
         var c=QCancellationRequest.cancellationRequest;
         var cancellations=query.selectFrom(c).where(c.orderId.eq(orderId)).orderBy(c.requestedAt.asc(),c.id.asc()).fetch().stream()
@@ -38,9 +50,9 @@ public class OrderDetailQueries {
         var h=QOrderHistory.orderHistory;
         var histories=query.selectFrom(h).where(h.orderId.eq(orderId)).orderBy(h.createdAt.asc(),h.id.asc()).fetch().stream()
                 .map(v->new History(id(v.getId()),id(v.getActorId()),v.getAction().name(),v.getFromStatus()==null?null:v.getFromStatus().name(),v.getToStatus().name(),v.getReason(),at(v.getCreatedAt()))).toList();
-        var p=QPayment.payment;var payment=query.selectFrom(p).where(p.orderId.eq(orderId)).fetchOne();
+        var payment = row.get(p);
         Payment paymentResponse=payment==null?null:new Payment(id(payment.getId()),payment.getAmount(),payment.getFeeRateBps(),payment.getStatus().name(),at(payment.getPaidAt()),at(payment.getRefundedAt()));
-        var rev=QReview.review;var review=query.selectFrom(rev).where(rev.orderId.eq(orderId)).fetchOne();
+        var review = row.get(rev);
         Review reviewResponse=review==null?null:new Review(id(review.getId()),id(review.getOrderId()),buyer.getDisplayName(),review.getRating(),review.getContent(),at(review.getCreatedAt()));
         var revisionDue=revision==null?null:revision.getDueAt();
         var due=order.getPaidAt()==null?null:revisionDue!=null?revisionDue:order.getDueAt();

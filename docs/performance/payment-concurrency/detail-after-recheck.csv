@@ -1,0 +1,4 @@
+scenario,workers,repeat,requests,successful_requests,committed_payments,expected_rejections,unexpected_errors,elapsed_ms,requests_per_sec,payments_per_sec,p50_ms,p95_ms,p99_ms,sql_per_request,locking_sql_per_request,sql_ms_per_request,locking_sql_ms_per_request,completion_ms_per_request,wallet_hold_ms_per_request,detail_ms_per_request,detail_sql_per_request
+SHARED_WALLET,8,1,16,16,16,0,0,321.729,49.731,49.731,148.894,170.934,170.934,27.000,3.000,112.055,94.544,3.215,18.942,4.474,4.000
+SHARED_WALLET,8,2,16,16,16,0,0,289.855,55.200,55.200,130.924,157.220,157.220,27.000,3.000,102.249,85.671,2.674,16.999,4.123,4.000
+SHARED_WALLET,8,3,16,16,16,0,0,271.606,58.909,58.909,126.942,142.450,142.450,27.000,3.000,96.207,80.119,2.548,15.982,3.883,4.000

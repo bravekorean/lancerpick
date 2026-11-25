@@ -21,6 +21,7 @@ import com.example.lancerpick.wallet.repository.WalletEntryRepository;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
@@ -78,10 +79,14 @@ public class FullFundingRecords {
   }
 
   Payment requirePayment(Order order) {
-    var payment =
-        paymentRepository
-            .findByOrderId(order.getId())
-            .orElseThrow(FullFundingRecords::integrityError);
+    return findValidatedPayment(order).orElseThrow(FullFundingRecords::integrityError);
+  }
+
+  Optional<Payment> findValidatedPayment(Order order) {
+    return paymentRepository.findByOrderId(order.getId()).map(payment -> validatePayment(order, payment));
+  }
+
+  private Payment validatePayment(Order order, Payment payment) {
     if (!TradePolicyVersion.CONTRACT_V3.name().equals(payment.getOrderPolicyVersion())
         || !"FULL".equals(payment.getInstallmentType())
         || payment.amount() != order.getPriceAmount()

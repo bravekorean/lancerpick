@@ -63,7 +63,7 @@ public class OrderPaymentService {
     if (!agreed) throw invalid();
     var order = locks.lockParticipantOrder(memberId, orderId);
     if (order.isFullFunding()) {
-      return fullFunding.pay(memberId, orderId);
+      return fullFunding.payLocked(memberId, order);
     }
     if (!order.getBuyerId().equals(memberId))
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "구매자만 결제할 수 있습니다.");

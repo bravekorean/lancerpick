@@ -29,6 +29,8 @@ import com.example.lancerpick.wallet.service.TopupRecoveryTransactions.Result;
 import com.example.lancerpick.wallet.service.WalletInitializationService;
 import com.example.lancerpick.wallet.service.WalletTopupApprovalService;
 import com.example.lancerpick.wallet.service.WalletTopupService;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -36,7 +38,9 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -47,6 +51,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.batch.core.BatchStatus;
@@ -468,6 +473,82 @@ class TopupRecoveryIntegrationTests {
     clock.advance(61);
     completedJob();
     assertCredited(pending);
+  }
+
+  @Test
+  @EnabledIfEnvironmentVariable(named = "TOPUP_RECOVERY_BENCHMARK", matches = "true")
+  void measureRecoveryBatchWithFixedProviderDelay() throws Exception {
+    var payments = new HashMap<String, Payment>();
+    var lookups = new AtomicInteger();
+    var candidateQueries = new AtomicInteger();
+    var providerNanos = new AtomicLong();
+    var delayMillis = new AtomicInteger();
+    when(gateway.lookup(anyString())).thenAnswer(call -> {
+      long started = System.nanoTime();
+      try {
+        Thread.sleep(delayMillis.get());
+        lookups.incrementAndGet();
+        Payment payment = payments.get(call.getArgument(0));
+        assertThat(payment).as("provider fixture for recovery candidate").isNotNull();
+        return payment;
+      } finally {
+        providerNanos.addAndGet(System.nanoTime() - started);
+      }
+    });
+    doAnswer(call -> {
+      candidateQueries.incrementAndGet();
+      return call.callRealMethod();
+    }).when(queries).nextId(anyLong(), anyLong(), any(), any(), org.mockito.ArgumentMatchers.anyInt());
+
+    var csv = new ArrayList<String>();
+    csv.add("pending,provider_delay_ms,repeat,batch_ms,recovered_per_sec,provider_ms,lookups,candidate_queries,rerun_ms,rerun_lookups");
+    for (int count : List.of(8, 10, 50, 100)) {
+      for (int delay : count == 8 ? List.of(0) : List.of(0, 50)) {
+        delayMillis.set(delay);
+        for (int repeat = 1; repeat <= (count == 8 ? 1 : 3); repeat++) {
+          clock.now = BASE;
+          var candidates = new ArrayList<Pending>(count);
+          payments.clear();
+          for (int i = 0; i < count; i++) {
+            var candidate = pending();
+            approvals.unknown(candidate.owner(), candidate.id(), "PROVIDER_UNAVAILABLE");
+            candidates.add(candidate);
+            payments.put(candidate.paymentKey(), done(candidate));
+          }
+          clock.advance(121);
+          lookups.set(0);
+          candidateQueries.set(0);
+          providerNanos.set(0);
+          long started = System.nanoTime();
+          var completed = completedJob();
+          long batchNanos = System.nanoTime() - started;
+          int selected = candidateQueries.get();
+          long providerTime = providerNanos.get();
+          assertThat(completed.getStepExecutions()).singleElement()
+              .satisfies(step -> assertThat(step.getWriteCount()).isEqualTo(count));
+          assertThat(lookups.get()).isEqualTo(count);
+          candidates.forEach(this::assertCredited);
+
+          lookups.set(0);
+          started = System.nanoTime();
+          var rerun = completedJob();
+          long rerunNanos = System.nanoTime() - started;
+          assertThat(rerun.getStepExecutions()).singleElement()
+              .satisfies(step -> assertThat(step.getWriteCount()).isZero());
+          assertThat(lookups.get()).isZero();
+          candidates.forEach(this::assertCredited);
+
+          if (count != 8) {
+            csv.add(String.format(Locale.ROOT, "%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%.3f,%d",
+                count, delay, repeat, batchNanos / 1e6, count * 1e9 / batchNanos,
+                providerTime / 1e6, count, selected, rerunNanos / 1e6, lookups.get()));
+          }
+        }
+      }
+    }
+    Path report = Path.of("build/reports/topup-recovery-benchmark.csv");
+    Files.createDirectories(report.getParent());
+    Files.write(report, csv);
   }
 
   @Test

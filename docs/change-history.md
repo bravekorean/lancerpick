@@ -10525,3 +10525,165 @@ SellerProfile: id(회원 ID),displayName,introduction,specialty,portfolioUrl. �
 Flyway V1~V11이 main에 있다. 계약 초안·서명·PDF, 결제 금액 보관, 자동 구매 확정 타이머, 주문 채팅(HTTP + STOMP), 주문·회원 알림, 운영 문의·관리자 취소 검토, 회원 제재 기반이 연결돼 있다. 이전 분할 결제(CONTRACT_V2) 생성 경로는 설정으로 닫혀 있다. [전체 스키마](change-history.md#b-175-0)·[정책 경계](change-history.md#b-65-0)에서 기반을, [현재 현황](project-progress.md#current-status)에서 남은 일을 확인한다. 담당별 고도화 항목·선행·상태는 [고도화 작업표](change-history.md#b-1109-0)를 따르세요.
 
 </details>
+
+
+<a id="finance-verification-summary"></a>
+
+## 2026-11-25 결제 최적화와 충전 복구 검증 요약
+
+| 검증 항목 | 결과 | 상세 기록 |
+| --- | --- | --- |
+| 동시 결제 정확성 | 같은 주문에 결제를 24회 요청해도 실제 차감은 한 번만 발생했다. 같은 지갑의 여러 주문에서도 결제액과 잔액·원장이 일치했다. | [동시 결제 검증](#payment-concurrency-benchmark) |
+| 신규 결제 SQL | 중복 잠금 조회와 상세 조회를 정리해 요청당 32회에서 27회로 15.6% 줄였다. 결제 재요청은 기존 결제 기록을 재사용해 SQL을 한 번 더 줄였다. | [기록 재사용](#payment-record-reuse) · [상세 조회 개선](#payment-order-detail-latency) |
+| 결제 서비스 지연 | 같은 지갑에 작업자 8개를 둔 로컬 역순 재측정에서 p95는 167.68ms → 157.22ms, 상세 조회 시간은 6.36ms → 4.12ms였다. 상세 조회 개선 전후 1,248요청에서 금액 검증 실패와 예상 밖 오류는 0건이었고 회귀 테스트 162개가 통과했다. | [측정 조건과 원본](#payment-order-detail-latency) |
+| 미확정 충전 복구 | 격리 MySQL과 토스 테스트 대역으로 960건의 정상 복구를 확인했다. 복구 직후 배치를 다시 시작한 18회 모두 추가 승인 조회와 중복 지급이 0건이었다. 100건 배치의 실행시간 중앙값은 대역 지연 0ms에서 2.75초, 건당 50ms에서 7.92초였다. | [복구 기준 측정과 원본](#topup-recovery-benchmark) |
+
+결제 지연은 로컬 서비스 호출에서 측정했으며 HTTP·브라우저 시간은 제외했다. 충전 복구 시간은 이미 복구 대상이 된 건의 배치 실행시간이며, 사용자 단건 재확인이나 자동 복구가 시작될 때까지의 대기시간은 별도다.
+
+<a id="payment-concurrency-benchmark"></a>
+
+## 2026-11-25 동시 결제 성능과 금액 일관성 검증
+
+### 목적과 변경
+
+CONTRACT_V3 적립금 결제에 대해 응답시간·처리량을 측정하면서 중복 차감, 초과 지출, 결제·보관금·원장 불일치를 함께 검증한다. 외부 결제사 충전 승인이나 정산 지급의 성능을 측정한 실험은 아니다.
+
+기준 소스는 `e00fb18`이다. `OrderPaymentService.pay()`가 실행 회원을 공유 잠금하고 주문을 배타 잠금한 뒤, `FullFundingService.pay()`가 같은 트랜잭션에서 같은 잠금 조회를 반복하고 있었다. 잠금 요청 SQL의 횟수는 JDBC 계측으로 확인한다. 같은 행을 재잠금하는 것이 별도의 교착이나 대기를 반드시 일으킨다는 의미는 아니다.
+
+변경 후에는 기존 트랜잭션에서 잠근 주문 엔티티를 package-private `payLocked()`에 전달한다. 이 진입점은 `Propagation.MANDATORY`로 독립 트랜잭션 없이 실행할 수 없도록 한다. 회원·주문·지갑의 잠금 순서, 구매자 권한, 계약 서명, 금액, 결제·보관금·원장 검증과 원자적 저장은 유지한다. 공개 `FullFundingService.pay(memberId, orderId)`는 직접 호출돼도 스스로 잠금을 획득한다.
+
+### 실험 방법
+
+- 날짜: 2026-11-25 (Asia/Seoul).
+- 환경: Windows 11 x64, Temurin JDK 25.0.5.1+2, Gradle 9.8.2, Spring Boot 4.1.2.
+- DB: Docker MySQL 8.4.13, `127.0.0.1:13376/lancerpick_test`. 개발 DB와 분리. Hikari 풀 크기는 두 버전 모두 12. 실험 종료 후 전용 컨테이너를 중지했다.
+- 측정 지점: 실제 Spring 프록시의 `OrderPaymentService.pay()` 호출 직전부터 트랜잭션 커밋/롤백 후 반환까지. HTTP·로그인·직렬화·외부 API 시간은 포함하지 않는다.
+- 고정 작업자 수 1/4/8, 각 조건 요청 24건, 3회 반복. 4개 시나리오 × 3개 동시성 × 3회 = 버전당 36회, 총 864요청.
+- 시작 장벽 뒤 고정 스레드 풀로 실행한다. 개별 지연시간은 작업자가 요청 실행을 시작한 시점부터이며 실행 대기열 시간은 제외한다. 전체 처리량에는 모든 작업 완료까지의 시간이 포함된다. 지속 유입률을 가정하는 부하 모델은 아니다.
+- 별도 지갑 8건으로 사전 실행한다. 픽스처 생성, 실제 계약 PDF 생성·양측 서명, 결과 검증, 정리는 측정에서 제외한다. 매 실행 새 주문·지갑을 사용한다.
+- 작은 로컬 데이터셋이며 운영 트래픽, 대규모 누적 데이터, 장시간 안정성을 대표하지 않는다.
+
+| 시나리오 | 요청 구성 | 실행당 기대 결과 |
+| --- | --- | --- |
+| DUPLICATE_ORDER | 같은 주문에 24회 요청 | 응답 성공 24회, 실제 결제·차감 1건 |
+| SHARED_WALLET | 같은 구매자 지갑으로 다른 주문 24건, 각 10,001원 | 결제 24건, 잔액 759,976원 |
+| INDEPENDENT_WALLETS | 다른 구매자 지갑 24개, 주문당 10,001원 | 결제 24건, 각 잔액 989,999원 |
+| INSUFFICIENT_BALANCE | 같은 지갑으로 다른 주문 24건, 각 600,001원 | 결제 1건, 잔액 부족 23건, 잔액 399,999원 |
+
+모든 지갑은 테스트 초기 지급액 1,000,000원으로 시작한다. 위 기대값은 실행마다 검증한다. 특히 중복 요청의 성공 응답 수를 신규 결제 처리량으로 해석하지 않는다.
+
+### 정확성 검증
+
+각 실행에서 커밋 이후 DB를 직접 대조하고, 이상이 있으면 성능 결과와 관계없이 테스트를 실패시킨다.
+
+- 예상 성공/잔액 부족 건수와 예상 밖 예외가 없는지 확인.
+- 주문당 결제·보관금·PAYMENT 원장·PAID 이력 개수가 0 또는 1로 일치하는지 확인.
+- 성공 주문은 IN_PROGRESS, 미결제 주문은 AWAITING_PAYMENT인지 확인.
+- 지갑 최종 잔액 = 초기 지급액 + PAYMENT 원장 증감 합계, 구매자별 결제액 합계 = 원장 차감액 합계, 음수 잔액 없음.
+- `V3FundsInvariant`로 결제액 = 보관액 + 반환액 + 판매자 지급액 + 수수료와 원장 소유자를 검증.
+- 결제 전 판매자 지갑은 변하지 않아야 함.
+- 별도 회귀 테스트로 중간 예외의 전체 롤백, 환불·확정 경쟁, 서명 누락, 잘못된 실행자, 직접 서비스 호출을 확인.
+
+### 지표 해석
+
+원본 CSV는 실행별 p50/p95/p99, 요청 처리량, 실제 결제 처리량, 성공/기대 거절/예상 밖 오류, SQL 실행 수와 실행시간을 기록한다. 비교 스크립트는 **실행별 p95의 중앙값**을 비교하며 이를 모든 요청을 합친 p95라고 부르지 않는다. 실행당 표본이 24건이므로 특히 p99의 해석은 제한적이다.
+
+JDBC 프록시는 측정 스레드의 PreparedStatement 실행을 계측한다. `locking_sql_ms_per_request`는 FOR UPDATE/FOR SHARE 실행시간의 합계로 DB 처리·네트워크·잠금 대기를 포함한다. **순수 잠금 대기시간이 아니다.** 커넥션 획득·커밋 시간은 SQL 합계에는 없지만 서비스 응답시간에는 포함된다. 재측정 쌍에는 `completion_ms_per_request`(commit/rollback 호출 시간), `wallet_hold_ms_per_request`(지갑 잠금 SQL 반환부터 commit/rollback 반환까지의 시간)를 추가했다. 후자도 DB 서버가 보고한 정확한 잠금 보유시간은 아니며 JDBC 경계의 근사치다. 같은 비교 쌍에는 같은 계측을 적용한다.
+
+### 재실행
+
+JDK 25와 저장소 Gradle Wrapper, 격리된 MySQL 테스트 DB를 준비한다. 기존 테스트의 `TestDatabaseInitializer`가 `lancerpick_test` 또는 `lancerpick_ci` 외의 DB 이름을 거부한다. Flyway가 테스트 DB에 스키마를 적용한다. 전용 테스트 DB에서 단독 실행하고, 다른 부하 테스트와 동시에 실행하지 않는다. 테스트는 자신이 만든 행만 정리하며 테이블 전체 삭제나 TRUNCATE를 하지 않는다.
+
+PowerShell에서 `JAVA_HOME`, `TEST_DB_URL`, `TEST_DB_USERNAME`, `TEST_DB_PASSWORD`를 개인 환경에 설정한 후 저장소 루트에서 실행한다. 자격증명은 문서나 CSV에 남기지 않는다.
+
+```powershell
+./docs/scripts/run-payment-benchmark.ps1 -Label baseline -Requests 24 -Repeats 3
+# 개선 변경 적용 후 같은 환경에서 실행
+./docs/scripts/run-payment-benchmark.ps1 -Label optimized -Requests 24 -Repeats 3
+python ./docs/scripts/compare-payment-benchmark.py ./LancerPick/build/reports/payment-benchmark/baseline.csv ./LancerPick/build/reports/payment-benchmark/optimized.csv
+```
+
+`baseline`은 반드시 변경 전 코드에서 실행한다. 현재 코드에서 라벨만 baseline으로 바꾼 결과는 변경 전 결과가 아니다. runner는 Gradle의 환경변수 캐시로 실행이 생략되지 않도록 `--rerun-tasks`를 사용한다. 벤치마크 클래스는 `PAYMENT_BENCHMARK=true`일 때만 실행되어 일반 테스트에 측정 부하를 추가하지 않는다.
+
+원본 CSV: `LancerPick/build/reports/payment-benchmark/<label>.csv`. 확정 측정치는 이 문서와 함께 `docs/performance/payment-concurrency/`에 보존한다.
+
+### 결과
+
+신규 V3 결제의 SQL 실행 수는 두 비교 쌍에서 모두 요청당 32회에서 30회(6.25% 감소), 잠금 조회 SQL은 5회에서 3회(40% 감소)로 줄었다. 잠금 SQL 횟수 감소를 잠금 보유시간 40% 감소로 해석하지 않는다. 중복 요청·잔액 부족 시나리오도 요청당 SQL 2회 감소가 재현됐다.
+
+응답시간은 첫 비교의 신규 결제에서 악화됐고, 원본 재측정에서도 느려지는 현상이 나타났다. 후속 비교까지 함께 보존하며, 이 자료만으로 일관된 응답시간·처리량 개선을 입증했다고 주장하지 않는다. 특히 재측정에서 commit/rollback 시간이 실행마다 달라지는 점을 확인했으나, 이것만으로 저장장치나 특정 환경 요인을 원인으로 확정하지 않는다.
+
+변경 전/후 두 비교 쌍을 모두 실행했으며, 워밍업을 제외한 총 3,456요청에서 금액 검증 실패와 예상 밖 오류는 0건이었다. 실행별 p95 중앙값의 대표 결과는 다음과 같다. 소수 표본의 로컬 측정값이며 통계적 유의성이나 운영 성능을 입증하는 수치는 아니다.
+
+| 시나리오·동시 작업자 | 첫 비교 p95(ms), 전 → 후 | 재비교 p95(ms), 전 → 후 | 해석 |
+| --- | --- | --- | --- |
+| 같은 주문 중복 요청·4 | 68.820 → 59.291 | 56.759 → 50.071 | 두 비교에서 약 12~14% 감소 관측. 신규 결제 처리량이 아닌 중복 요청 응답시간 |
+| 같은 지갑 신규 결제·8 | 130.624 → 180.197 | 164.894 → 138.531 | 방향이 달라 일관된 속도 개선 주장 불가 |
+| 독립 지갑 신규 결제·8 | 37.556 → 49.387 | 51.211 → 37.039 | 방향이 달라 일관된 속도 개선 주장 불가 |
+| 잔액 부족·8 | 42.733 → 34.470 | 43.574 → 34.280 | 대부분 잔액 부족 거절인 응답시간. 성공 결제 속도로 해석 금지 |
+
+원본: [baseline.csv](performance/payment-concurrency/baseline.csv), [optimized.csv](performance/payment-concurrency/optimized.csv), [baseline-repeat.csv](performance/payment-concurrency/baseline-repeat.csv), [optimized-repeat.csv](performance/payment-concurrency/optimized-repeat.csv). 전체 조건 비교: [첫 비교](performance/payment-concurrency/comparison.csv), [재비교](performance/payment-concurrency/comparison-repeat.csv). 라벨 순서 그대로 원본 → 수정본 → 원본 → 수정본으로 실행했다. 두 번째 비교부터 추가한 commit/rollback·지갑 보유 근사 계측은 같은 비교 쌍의 양쪽에 적용했다.
+
+최종 수정본의 회귀 테스트는 47개 통과(실패·오류·건너뜀 0)했다. `FullFundingTradeIntegrationTests` 15개, `OrderPaymentIntegrationTests` 13개, `FullFundingTransactionBoundaryIntegrationTests` 1개, `OrderCommandLocksTests` 6개, `V3ActivationGateIntegrationTests` 7개, `FullFundingIntegrationTests` 5개다. 기존 예외 롤백·동시 결제·환불/확정 경쟁과 신규 직접 진입점·기존 트랜잭션 필수 조건을 포함한다. 전체 백엔드/프런트 테스트나 실제 외부 결제 API 검증을 수행했다는 의미는 아니다. [검증 요약](performance/payment-concurrency/verification.json)에 실행 집계를 보존한다.
+
+### 서류 활용 범위
+
+검증이 완료된 결과를 기준으로 다음과 같이 작성할 수 있다.
+
+> 동시 결제 테스트에서 중복 결제·공유 지갑·독립 지갑·잔액 부족 상황의 금액 일관성을 검증했습니다. 같은 트랜잭션에서 반복하던 회원·주문 잠금 조회를 제거해, 신규 결제의 SQL 실행 수를 요청당 32회에서 30회로 줄였습니다.
+
+자기소개서에서는 '트랜잭션과 잠금을 적용하는 데서 그치지 않고 실제 부하에서 정확성과 비용을 확인했다 → 중복 잠금 조회 발견 → 필요한 잠금·검증은 유지하고 조회만 줄였다 → 정확성을 다시 대조했다'는 문제 해결 과정을 설명한다. '전체 결제 성능 40% 향상', '운영 대규모 트래픽 검증', '순수 잠금 대기시간 감소'는 이 실험으로 뒷받침되지 않는다.
+
+<a id="payment-record-reuse"></a>
+
+### 후속 개선: 결제 기록 재조회 제거
+
+V3 결제 재요청과 보관금 요약 조회에서 결제 기록이 있는지 확인한 뒤 같은 주문의 결제 기록을 다시 조회하고 있었다. 결제 기록을 한 번 읽고 기존 검증 로직에 넘기도록 변경했다. 주문 잠금과 결제 정책·금액·결제 시각·원장 대사 기준은 기존과 같다.
+
+앞 단계 수정본인 `optimized-repeat.csv`를 기준으로 동일한 로컬 MySQL 서비스 벤치마크를 실행했다. 같은 주문에 24회 요청하는 시나리오에서는 최초 결제 1건과 재요청 23건을 처리했고, 재요청마다 SQL 1회가 줄었다. 최초 요청을 포함한 평균은 **15.625회 → 14.667회**다. 신규 결제의 SQL은 30회, 잠금 조회는 3회였다. 보관금 요약의 조회 횟수는 코드에서 확인했으며, 벤치마크 수치에는 포함하지 않았다.
+
+후속 측정은 4개 시나리오에서 총 864요청을 처리했다. 금액 검증 실패와 예상 밖 오류는 0건이며, 결제·환불·롤백 관련 회귀 테스트 47개가 통과했다. 같은 주문 시나리오의 p95 변화는 작업자 수 1·4·8에 따라 각각 −9.1%, +4.3%, +6.2%로 방향이 달랐다. [원본 측정치](performance/payment-concurrency/payment-record-reuse.csv)와 [기준 대비 비교](performance/payment-concurrency/comparison-payment-record-reuse.csv)를 보존했다.
+
+<a id="payment-order-detail-latency"></a>
+
+### 후속 개선: 결제 응답용 주문 상세 조회
+
+신규 V3 결제는 지갑을 잠근 트랜잭션에서 주문 상세 응답을 조립한다. 상세 조회의 결제·수정 요청·후기는 주문당 최대 한 건이라는 DB 제약을 활용해 기본 주문 조회에 LEFT JOIN으로 합쳤다. 여러 행을 가질 수 있는 납품·취소 요청·이력은 각 목록의 정렬을 보존하고 조인 결과의 행 증폭을 피하도록 별도로 조회한다. 결제 API는 기존 상세 응답과 처리 오류 시 롤백 동작을 제공한다.
+
+격리 MySQL 8.4.13에서 변경 전후 각각 4개 시나리오, 작업자 1·4·8개, 실행당 16요청으로 세 번 반복했다. JDBC 실행 횟수와 상세 조회 메서드 시간, 지갑 잠금 SQL 반환부터 커밋 반환까지의 시간을 계측했다. 결제 서비스의 p95는 반복별 p95 중 중앙값이며, 실행당 16표본에서는 nearest-rank p95가 해당 실행의 최댓값이다. HTTP·브라우저 응답시간은 포함되지 않는다.
+
+- 주문 상세 조회 SQL **7회 → 4회**, 신규 결제 전체 SQL **30회 → 27회**. 첫 잠금 조회 개선 전과 비교하면 신규 결제 전체 SQL은 **32회 → 27회**다.
+- 첫 측정의 같은 지갑·작업자 8개 조건에서 상세 조회 시간은 **5.619ms → 3.420ms**, 지갑 잠금 SQL 반환 후 커밋 반환까지 **23.246ms → 14.984ms**, 결제 p95 **195.739ms → 136.006ms**였다. 앞의 두 값은 실행별 평균의 중앙값이다.
+- 같은 조건의 JDBC 커밋 시간도 **7.808ms → 2.632ms**로 움직였다. 첫 비교의 p95 감소 폭 전체를 조회 통합 효과로 해석하기 어렵다.
+
+[변경 전 원본](performance/payment-concurrency/detail-before.csv) · [변경 후 원본](performance/payment-concurrency/detail-after.csv) · [조건별 비교](performance/payment-concurrency/comparison-detail.csv)
+
+같은 지갑·작업자 8개 조건을 수정본 → 기준본 순서로 재실행했다. 작업자 수와 요청 수는 첫 비교와 같고, 측정 대상을 좁히기 위해 실행 전에 `PAYMENT_BENCHMARK_SHARED_WALLET_ONLY=true`를 지정했다.
+
+| 지표 | 기준본 | 수정본 | 감소율 |
+| --- | ---: | ---: | ---: |
+| 주문 상세 조회 시간 | 6.356ms | 4.123ms | 35.1% |
+| 지갑 잠금 SQL 반환부터 커밋 반환까지 | 19.343ms | 16.999ms | 12.1% |
+| 결제 서비스 p95 | 167.680ms | 157.220ms | 6.2% |
+
+역순 재측정에서 JDBC 커밋 시간은 2.810ms → 2.674ms였다. 두 비교에서 주문 상세 SQL이 7회 → 4회로 줄고 상세 조회 시간이 약 35~39% 감소했다. p95도 두 비교에서 감소했으나 감소 폭은 달랐다. 전체 및 역순 측정을 합친 1,248요청에서 금액 검증 실패와 예상 밖 오류는 0건이었다. 결제·주문 상세·수정·후기 등을 포함한 회귀 테스트 162개가 통과했다.
+
+[역순 기준본](performance/payment-concurrency/detail-before-recheck.csv) · [역순 수정본](performance/payment-concurrency/detail-after-recheck.csv)
+
+<a id="topup-recovery-benchmark"></a>
+
+### 2026-11-25 충전 복구 배치 성능 기준 측정
+
+격리 MySQL 8.4.13과 실제 Spring Batch JDBC 저장소에서 승인 결과가 미확정인 충전 건의 복구를 측정했다. 토스 승인 조회는 승인 성공을 반환하는 대역으로 실행했다. 모의 지연은 호출당 0ms와 50ms이며 실제 토스 네트워크 시간과 별개다. 복구 가능해진 테스트 충전을 10·50·100건씩 준비했고, 8건 예열 뒤 각 조건을 세 번 실행했다. 데이터 준비와 검증 조회는 제외하고 배치 시작부터 완료까지 측정했다. 표는 각 지표의 실행별 중앙값이다.
+
+| 복구 대상 | 모의 지연 0ms | 모의 지연 50ms |
+| ---: | ---: | ---: |
+| 10건 | 0.400초 · 25.0건/초 | 0.931초 · 10.7건/초 |
+| 50건 | 1.450초 · 34.5건/초 | 4.090초 · 12.2건/초 |
+| 100건 | 2.751초 · 36.4건/초 | 7.921초 · 12.6건/초 |
+
+100건·50ms 조건에서 토스 대역 호출 시간 합계의 중앙값은 5.061초로 배치 실행시간 중앙값의 약 64% 규모였다. 대상 100건 처리에 다음 후보 ID를 읽는 쿼리가 101회 실행됐다. 이 수는 배치 메타데이터·충전 반영·원장 저장 등의 SQL을 제외한 후보 조회 수다. 본 결과는 현 구현의 기준값이다.
+
+예열을 제외한 960건 전체에서 충전 상태 COMPLETED, 잔액 5만원 증가, 원장 1행을 확인했다. 각 실행 직후 같은 배치를 다시 시작한 18회 모두 토스 대역 추가 조회와 추가 지급이 0건이었다. 100건 처리 직후 재실행 시간 중앙값은 약 0.10초였다. 복구·스케줄링·승인 관련 테스트 47개가 통과했다.
+
+격리 테스트 DB에 접속 설정을 한 뒤 백엔드 폴더에서 `TOPUP_RECOVERY_BENCHMARK=true`와 `./gradlew.bat test --tests '*TopupRecoveryIntegrationTests' --rerun-tasks`로 재실행할 수 있다. [충전 복구 측정 원본](performance/topup-recovery-benchmark.csv)
