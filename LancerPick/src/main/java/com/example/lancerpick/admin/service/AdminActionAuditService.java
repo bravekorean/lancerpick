@@ -121,7 +121,8 @@ public class AdminActionAuditService {
       return new BeginResult(AdminActionReceipt.from(log), false);
     }
     LocalDateTime now = now();
-    var pending = logs.findPendingForUpdate(action, targetId);
+    // 대상 기준: 같은 Batch 실행에 다른 명령(일반 재시작·정리 후 재시작)이 진행 중이어도 409로 막는다.
+    var pending = logs.findPendingForUpdate(action.targetType(), targetId);
     if (pending.isPresent()) {
       var log = pending.get();
       // 최초 replay 조회 이후 다른 요청이 커밋했을 수도 있다(READ_COMMITTED).

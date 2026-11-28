@@ -20,8 +20,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 후보 재검사 트랜잭션을 끝낸 다음 Spring Batch의 재시작/중복 실행 검사를 사용한다.
  *
- * <p>중단 실행 정리({@link #recoverAndRestart})는 감사 claim 트랜잭션에서 후보를 재검사하고, 트랜잭션 밖에서 메타데이터를 다시 읽어 같은
- * 규칙으로 한 번 더 확인한 뒤 recover → restart 순서로 호출한다. 감사 이력의 대상별 진행 중 UNIQUE가 같은 실행에 대한 동시 정리 요청을 막는다.
+ * <p>중단 실행 정리({@link #recoverAndRestart})는 실행 버전을 기록한 뒤 감사 claim 트랜잭션에서 후보를 재검사하고, 버전이 그대로이며 여전히
+ * 중단 상태일 때만 버전 펜스를 걸고 recover한 뒤 restart를 호출한다. 감사 이력의 대상별 진행 중 UNIQUE가 같은 실행에 대한 동시 정리 요청을 막는다.
  */
 @Service
 @Profile("!demo")
@@ -60,16 +60,19 @@ public class AdminBatchRestartService {
   }
 
   public Outcome recoverAndRestart(long adminId, long logId, long executionId) throws Exception {
+    var service = jobs.getIfAvailable();
+    if (service == null) return Outcome.BATCH_RECOVER_REJECTED;
+    // 재검사 직전의 실행 버전을 기록한다. 이후 한 번이라도 갱신되면(재검사 중 포함) recover 단계가 거절한다.
+    // Job 서비스는 트랜잭션 밖 전용(NEVER)이라 claim 트랜잭션 전에 읽는다.
+    var checked = service.snapshot(executionId);
     transaction.executeWithoutResult(ignored -> {
       guard.require(adminId, logId, AdminAction.TOPUP_RECOVERY_RECOVER_RESTART, executionId);
       if (!finance.recoveryJob(adminId, executionId).recoverRestart().eligible())
         throw new BusinessException(
             HttpStatus.CONFLICT, "ADMIN_ACTION_NOT_ELIGIBLE", "현재 정리할 수 있는 중단 실행이 아닙니다.");
     });
-    var service = jobs.getIfAvailable();
-    if (service == null) return Outcome.BATCH_RECOVER_REJECTED;
     try {
-      service.recoverInterrupted(executionId);
+      service.recoverInterrupted(executionId, checked);
     } catch (JobRestartException notInterrupted) {
       // 재검사에서 중단 실행이 아니었다. 메타데이터는 바뀌지 않았다.
       return Outcome.BATCH_RECOVER_REJECTED;

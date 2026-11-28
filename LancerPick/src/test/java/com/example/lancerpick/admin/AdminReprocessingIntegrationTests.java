@@ -470,8 +470,8 @@ class AdminReprocessingIntegrationTests {
     step.setStatus(BatchStatus.STARTED);
     step.setStartTime(LocalDateTime.now());
     jobs.update(step);
-    // Batch 메타데이터 시각은 서버 기본 시간대의 LocalDateTime이다. 갱신이 멈춘 시점을 과거로 옮긴다.
-    var at = LocalDateTime.now().minus(silentFor);
+    // Batch와 같이 Timestamp(순간)로 저장한다. 갱신이 멈춘 시점을 과거로 옮긴다.
+    var at = java.sql.Timestamp.from(Instant.now().minus(silentFor));
     jdbc.update(
         "UPDATE BATCH_JOB_EXECUTION SET CREATE_TIME=?,START_TIME=?,LAST_UPDATED=? WHERE"
             + " JOB_EXECUTION_ID=?",

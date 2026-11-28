@@ -9,6 +9,7 @@ import com.example.lancerpick.wallet.batch.TopupRecoveryLocalExecutions;
 import com.example.lancerpick.wallet.config.TopupRecoveryProperties;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import org.junit.jupiter.api.Test;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.job.JobExecution;
@@ -84,7 +85,8 @@ class TopupRecoveryInterruptionTests {
   }
 
   private Verdict assess(JobExecution execution, JobExecution latest, boolean runningHere) {
-    return TopupRecoveryInterruption.assess(execution, latest, runningHere, NOW, QUIET);
+    return TopupRecoveryInterruption.assess(
+        execution, latest, runningHere, NOW.atZone(ZoneId.systemDefault()).toInstant(), QUIET);
   }
 
   private JobExecution execution(long id, BatchStatus status, LocalDateTime updated) {

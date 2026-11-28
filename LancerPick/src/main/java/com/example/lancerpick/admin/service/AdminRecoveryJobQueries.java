@@ -16,7 +16,7 @@ import com.example.lancerpick.wallet.batch.TopupRecoveryJobParameters;
 import com.example.lancerpick.wallet.batch.TopupRecoveryLocalExecutions;
 import com.example.lancerpick.wallet.config.TopupRecoveryBatchConfiguration;
 import com.example.lancerpick.wallet.config.TopupRecoveryProperties;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -168,7 +168,7 @@ public class AdminRecoveryJobQueries {
             execution,
             latest,
             registry != null && registry.isRunningHere(execution.getId()),
-            LocalDateTime.now(),
+            Instant.now(),
             properties.interruptedAfter());
     return switch (verdict) {
       case NOT_RUNNING_STATUS -> Decision.blocked(JOB_NOT_INTERRUPTED);

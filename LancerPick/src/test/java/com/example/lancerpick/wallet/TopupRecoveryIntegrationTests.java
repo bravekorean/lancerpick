@@ -34,6 +34,7 @@ import com.example.lancerpick.wallet.service.WalletTopupService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -624,12 +625,12 @@ class TopupRecoveryIntegrationTests {
     assertThatThrownBy(() -> jobs.restart(crashed.getId())).isInstanceOf(JobRestartException.class);
     verify(gateway, never()).lookup(second.paymentKey());
     // 방금 갱신된 실행은 살아 있을 수 있으므로 정리하지 않는다.
-    assertThatThrownBy(() -> jobs.recoverInterrupted(crashed.getId()))
+    assertThatThrownBy(() -> jobs.recoverInterrupted(crashed.getId(), jobs.snapshot(crashed.getId())))
         .isInstanceOf(JobRestartException.class);
     assertThat(jobRepository.getJobExecution(crashed.getId()).getStatus())
         .isEqualTo(BatchStatus.STARTED);
-    // 갱신이 기준 시간(기본 30분)보다 오래 멈춘 상태로 옮긴다. Batch 시각은 서버 기본 시간대의 LocalDateTime이다.
-    var silentSince = LocalDateTime.now().minusHours(1);
+    // 갱신이 기준 시간(기본 30분)보다 오래 멈춘 상태로 옮긴다. Batch와 같이 Timestamp(순간)로 저장해 JVM 시간대와 무관하게 한다.
+    var silentSince = java.sql.Timestamp.from(Instant.now().minus(Duration.ofHours(1)));
     jdbc.update(
         "UPDATE BATCH_JOB_EXECUTION SET CREATE_TIME=?,START_TIME=?,LAST_UPDATED=? WHERE"
             + " JOB_EXECUTION_ID=?",
@@ -645,7 +646,7 @@ class TopupRecoveryIntegrationTests {
         silentSince,
         step.getId());
     // 운영 경로(관리자 정리 명령)가 쓰는 서비스 메서드로 JobOperator.recover를 호출한다.
-    var recovered = jobs.recoverInterrupted(crashed.getId());
+    var recovered = jobs.recoverInterrupted(crashed.getId(), jobs.snapshot(crashed.getId()));
     assertThat(recovered.getStatus()).isEqualTo(BatchStatus.FAILED);
 
     var restarted = jobs.restart(crashed.getId());
