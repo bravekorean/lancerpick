@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -143,6 +144,37 @@ class AdminReprocessingApiIntegrationTests {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.resultCode").value("BATCH_RESTART_REJECTED"));
+    }
+
+    @Test
+    void interruptedJobRecoveryPassesExecutionIdAndRejectsVersion() throws Exception {
+        when(reprocessing.recoverAndRestartTopupRecovery(admin, 31L, "중단 확인", UUID.fromString(KEY)))
+                .thenReturn(new AdminReprocessingService.Result(
+                        receipt(AdminAction.TOPUP_RECOVERY_RECOVER_RESTART, 31, AdminActionStatus.SUCCEEDED,
+                                "BATCH_RECOVER_RESTART_ACCEPTED"),
+                        false));
+        mvc.perform(post("/api/admin/finance/recovery-jobs/31/recover-restart").with(csrf())
+                        .with(authentication(auth(admin, "ADMIN")))
+                        .contentType("application/json").content(body("중단 확인", KEY)))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.action").value("TOPUP_RECOVERY_RECOVER_RESTART"))
+                .andExpect(jsonPath("$.resultCode").value("BATCH_RECOVER_RESTART_ACCEPTED"));
+        // 버전 값·CSRF 누락·일반 회원은 서비스까지 가지 않는다.
+        mvc.perform(post("/api/admin/finance/recovery-jobs/31/recover-restart").with(csrf())
+                        .with(authentication(auth(admin, "ADMIN")))
+                        .contentType("application/json")
+                        .content("{\"reason\":\"중단 확인\",\"requestKey\":\"" + KEY + "\",\"version\":1}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/admin/finance/recovery-jobs/31/recover-restart")
+                        .with(authentication(auth(admin, "ADMIN")))
+                        .contentType("application/json").content(body("중단 확인", KEY)))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/admin/finance/recovery-jobs/31/recover-restart").with(csrf())
+                        .with(authentication(auth(user, "USER")))
+                        .contentType("application/json").content(body("중단 확인", KEY)))
+                .andExpect(status().isForbidden());
+        verify(reprocessing, times(1)).recoverAndRestartTopupRecovery(anyLong(), anyLong(), any(), any());
     }
 
     @Test

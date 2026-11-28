@@ -1,6 +1,7 @@
 package com.example.lancerpick.wallet.config;
 
 import com.example.lancerpick.wallet.batch.TopupRecoveryJobParameters;
+import com.example.lancerpick.wallet.batch.TopupRecoveryLocalExecutions;
 import com.example.lancerpick.wallet.batch.TopupRecoveryTasklet;
 import com.example.lancerpick.wallet.repository.TopupRecoveryQueries;
 import com.example.lancerpick.wallet.service.TopupRecoveryService;
@@ -33,6 +34,12 @@ public class TopupRecoveryBatchConfiguration {
     return new TopupRecoveryTasklet(queries, recovery, properties, clock);
   }
 
+  /** 이 서버에서 실행 중인 실행 ID. 중단 실행 정리가 살아 있는 실행을 건드리지 않도록 확인한다. */
+  @Bean
+  public TopupRecoveryLocalExecutions topupRecoveryLocalExecutions() {
+    return new TopupRecoveryLocalExecutions();
+  }
+
   @Bean
   public Step walletTopupRecoveryStep(
       JobRepository jobRepository,
@@ -46,9 +53,13 @@ public class TopupRecoveryBatchConfiguration {
   }
 
   @Bean
-  public Job walletTopupRecoveryJob(JobRepository jobRepository, Step walletTopupRecoveryStep) {
+  public Job walletTopupRecoveryJob(
+      JobRepository jobRepository,
+      Step walletTopupRecoveryStep,
+      TopupRecoveryLocalExecutions topupRecoveryLocalExecutions) {
     return new JobBuilder(JOB_NAME, jobRepository)
         .validator(TopupRecoveryJobParameters::validate)
+        .listener(topupRecoveryLocalExecutions)
         .start(walletTopupRecoveryStep)
         .build();
   }

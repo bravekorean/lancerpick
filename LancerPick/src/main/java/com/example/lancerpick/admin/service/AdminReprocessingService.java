@@ -60,6 +60,18 @@ public class AdminReprocessingService {
         id -> batch.restart(adminId, id, executionId));
   }
 
+  /** 프로세스 종료로 실행 중 상태에 남은 복구 실행을 정리하고 재시작한다. 실행 중일 수 있으면 아무것도 바꾸지 않는다. */
+  public Result recoverAndRestartTopupRecovery(
+      long adminId, long executionId, String reason, UUID requestKey) {
+    return execute(
+        adminId,
+        AdminAction.TOPUP_RECOVERY_RECOVER_RESTART,
+        executionId,
+        reason,
+        requestKey,
+        id -> batch.recoverAndRestart(adminId, id, executionId));
+  }
+
   /** contractId는 특정 계약 버전의 PK다. API에서 주문/버전을 쓰면 먼저 해당 계약 ID로 해석한다. */
   public Result regenerateContractPdf(
       long adminId, long contractId, String reason, UUID requestKey) {
@@ -92,6 +104,7 @@ public class AdminReprocessingService {
             switch (action) {
               case TOPUP_RECHECK -> Outcome.TOPUP_STATE_CHANGED;
               case TOPUP_RECOVERY_RESTART -> Outcome.BATCH_RESTART_REJECTED;
+              case TOPUP_RECOVERY_RECOVER_RESTART -> Outcome.BATCH_RECOVER_REJECTED;
               case CONTRACT_PDF_REGENERATE -> Outcome.PDF_STATE_CHANGED;
             };
       else result = unknown(action);
@@ -99,7 +112,11 @@ public class AdminReprocessingService {
         | JobInstanceAlreadyCompleteException
         | JobRestartException
         | InvalidJobParametersException rejectedRestart) {
-      result = Outcome.BATCH_RESTART_REJECTED;
+      // 정리 명령은 자체적으로 이 예외를 결과 코드로 바꾸므로 여기에 오지 않는다. 방어적으로 같은 의미의 거절로 둔다.
+      result =
+          action == AdminAction.TOPUP_RECOVERY_RECOVER_RESTART
+              ? Outcome.BATCH_RECOVER_REJECTED
+              : Outcome.BATCH_RESTART_REJECTED;
     } catch (Exception uncertain) {
       // 원문을 응답/감사에 저장하지 않는다. 커밋이나 재시작 접수 여부가 불명확할 수 있다.
       result = unknown(action);
@@ -111,7 +128,7 @@ public class AdminReprocessingService {
   private Outcome unknown(AdminAction action) {
     return switch (action) {
       case TOPUP_RECHECK -> Outcome.TOPUP_RESULT_UNCONFIRMED;
-      case TOPUP_RECOVERY_RESTART -> Outcome.BATCH_RESULT_UNCONFIRMED;
+      case TOPUP_RECOVERY_RESTART, TOPUP_RECOVERY_RECOVER_RESTART -> Outcome.BATCH_RESULT_UNCONFIRMED;
       case CONTRACT_PDF_REGENERATE -> Outcome.PDF_RESULT_UNCONFIRMED;
     };
   }

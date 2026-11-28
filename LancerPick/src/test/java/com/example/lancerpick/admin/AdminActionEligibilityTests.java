@@ -42,6 +42,20 @@ class AdminActionEligibilityTests {
   }
 
   @Test
+  void interruptedJobUsesItsOwnCandidateNotTheRestartCandidate() {
+    var response = mock(AdminFinanceResponses.RecoveryJob.class);
+    when(finance.recoveryJob(1, 2)).thenReturn(response);
+    when(response.restart()).thenReturn(Decision.ready());
+    when(response.recoverRestart()).thenReturn(Decision.blocked(BlockReason.JOB_NOT_INTERRUPTED));
+    assertThatThrownBy(
+            () -> service.requireEligible(1, AdminAction.TOPUP_RECOVERY_RECOVER_RESTART, 2))
+        .isInstanceOf(BusinessException.class);
+    when(response.restart()).thenReturn(Decision.blocked(BlockReason.JOB_RUNNING));
+    when(response.recoverRestart()).thenReturn(Decision.ready());
+    assertThat(service.requireEligible(1, AdminAction.TOPUP_RECOVERY_RECOVER_RESTART, 2)).isNull();
+  }
+
+  @Test
   void jobUsesRestartCandidate() {
     var response = mock(AdminFinanceResponses.RecoveryJob.class);
     when(finance.recoveryJob(1, 2)).thenReturn(response);

@@ -28,6 +28,8 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'logs', label: '관리자 작업 이력' },
 ]
 const ACTIONS = Object.keys(ACTION_LABELS) as ReprocessAction[]
+/** 서버 기록상 실행 중인 상태. 프로세스가 멈춰 남은 기록일 수 있어 중단 실행 정리 판단을 함께 보여 준다. */
+const RUNNING_JOB_STATUSES = ['STARTING', 'STARTED', 'STOPPING']
 const time = (value: string | null) => value ? formatDateTime(value) : '—'
 /** 초기화 대상 주소 키. tab은 넣지 않아 초기화해도 같은 탭에 머문다. */
 const PAYMENT_KEYS = ['orderId', 'buyerId', 'sellerId', 'status', 'policyVersion'] as const
@@ -186,6 +188,8 @@ function Jobs() {
         <small>원래 스캔 요청 시각 {time(job.scanRequestedAt)}</small>
         <p>재시작: {decisionLabel(job.restart.eligible, job.restart.reason)}</p>
         {job.executionId && <AdminReprocessPanel action="TOPUP_RECOVERY_RESTART" target={job.executionId} eligible={job.restart.eligible} />}
+        {RUNNING_JOB_STATUSES.includes(job.status) && <p>중단 실행 정리: {decisionLabel(job.recoverRestart.eligible, job.recoverRestart.reason)}</p>}
+        {job.executionId && <AdminReprocessPanel action="TOPUP_RECOVERY_RECOVER_RESTART" target={job.executionId} eligible={job.recoverRestart.eligible} />}
       </li>)}
     </ul>}
     <AdminPager page={page} totalPages={list.data.totalPages} busy={list.isFetching} onPage={setPage} label="복구 작업 페이지" />

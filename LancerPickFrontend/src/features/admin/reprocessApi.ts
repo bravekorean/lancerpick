@@ -9,7 +9,8 @@ import { isValidProductId as isValidId } from './validation.ts'
  * 서버가 감사 요청을 먼저 커밋하고 업무를 실행한 뒤 결과를 따로 커밋한다. 화면은 결과를 고르지 않고 receipt의 상태·결과 코드만 보여 준다.
  * 같은 requestKey·같은 사유로 다시 보내면 서버는 다시 실행하지 않고 기존 기록을 돌려준다(200).
  */
-export type ReprocessAction = 'TOPUP_RECHECK' | 'TOPUP_RECOVERY_RESTART' | 'CONTRACT_PDF_REGENERATE'
+export type ReprocessAction =
+  | 'TOPUP_RECHECK' | 'TOPUP_RECOVERY_RESTART' | 'TOPUP_RECOVERY_RECOVER_RESTART' | 'CONTRACT_PDF_REGENERATE'
 type ActionStatus = 'REQUESTED' | 'SUCCEEDED' | 'REJECTED' | 'FAILED' | 'UNKNOWN'
 
 interface ActionReceipt {
@@ -28,6 +29,7 @@ function path(command: ReprocessCommand) {
   switch (command.action) {
     case 'TOPUP_RECHECK': return `/admin/finance/topups/${command.target}/recheck`
     case 'TOPUP_RECOVERY_RESTART': return `/admin/finance/recovery-jobs/${command.target}/restart`
+    case 'TOPUP_RECOVERY_RECOVER_RESTART': return `/admin/finance/recovery-jobs/${command.target}/recover-restart`
     case 'CONTRACT_PDF_REGENERATE': return `/admin/orders/${command.target}/contract-pdf/regenerate`
   }
 }
@@ -127,10 +129,11 @@ export async function submitReprocess(
 const isResourceBusy = (error: unknown) => error instanceof ApiError && error.code === 'RESOURCE_BUSY'
 
 export const ACTION_LABELS: Record<ReprocessAction, string> = {
-  TOPUP_RECHECK: '충전 재확인', TOPUP_RECOVERY_RESTART: '충전 복구 작업 재시작', CONTRACT_PDF_REGENERATE: '계약 PDF 다시 만들기',
+  TOPUP_RECHECK: '충전 재확인', TOPUP_RECOVERY_RESTART: '충전 복구 작업 재시작',
+  TOPUP_RECOVERY_RECOVER_RESTART: '중단된 복구 작업 정리 후 재시작', CONTRACT_PDF_REGENERATE: '계약 PDF 다시 만들기',
 }
 const TARGET_LABELS: Record<ReprocessAction, string> = {
-  TOPUP_RECHECK: '충전', TOPUP_RECOVERY_RESTART: '실행', CONTRACT_PDF_REGENERATE: '계약',
+  TOPUP_RECHECK: '충전', TOPUP_RECOVERY_RESTART: '실행', TOPUP_RECOVERY_RECOVER_RESTART: '실행', CONTRACT_PDF_REGENERATE: '계약',
 }
 export const targetLabel = (receipt: ActionReceipt) =>
   `${TARGET_LABELS[receipt.action] ?? receipt.targetType} #${receipt.targetId}${receipt.orderId ? ` · 주문 #${receipt.orderId}` : ''}`
@@ -148,6 +151,9 @@ const RESULTS: Record<string, string> = {
   BATCH_RESTART_ACCEPTED: '재시작을 접수했어요. 작업이 끝났다는 뜻은 아니니 복구 작업 목록에서 최신 실행을 확인해 주세요.',
   BATCH_RESTART_REJECTED: '재시작 조건에 맞지 않아 거절됐어요(이미 실행 중이거나 더 최근 실행이 있는 경우 등).',
   BATCH_RESULT_UNCONFIRMED: '재시작 접수 여부를 확인하지 못했어요. 복구 작업 목록을 다시 확인해 주세요.',
+  BATCH_RECOVER_RESTART_ACCEPTED: '중단된 실행을 실패로 정리하고 재시작을 접수했어요. 작업이 끝났다는 뜻은 아니니 최신 실행을 확인해 주세요.',
+  BATCH_RECOVER_REJECTED: '실행 직전 다시 확인해 보니 아직 실행 중일 수 있어 아무것도 바꾸지 않았어요.',
+  BATCH_RECOVERED_RESTART_REJECTED: '중단된 실행을 실패로 정리했지만 재시작은 거절됐어요. 목록에서 일반 재시작을 다시 시도할 수 있어요.',
   PDF_GENERATED: '계약 PDF를 만들어 저장했어요.',
   PDF_GENERATION_FAILED: 'PDF를 만들지 못했어요. 계약은 실패 상태로 기록돼 다시 시도할 수 있어요.',
   PDF_STATE_CHANGED: '그사이 계약이나 주문 상태가 바뀌어 이번 생성은 반영하지 않았어요.',

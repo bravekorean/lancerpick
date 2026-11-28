@@ -53,6 +53,24 @@ class AdminReprocessingServiceTests {
   }
 
   @Test
+  void recoverRestartKeepsItsOwnRejectionAndUnknownCodes() throws Exception {
+    when(audit.begin(1, AdminAction.TOPUP_RECOVERY_RECOVER_RESTART, 2, "사유", key))
+        .thenReturn(new BeginResult(receipt, true));
+    when(batch.recoverAndRestart(1, 3, 2))
+        .thenReturn(Outcome.BATCH_RECOVER_RESTART_ACCEPTED)
+        .thenThrow(
+            new BusinessException(
+                org.springframework.http.HttpStatus.CONFLICT, "ADMIN_ACTION_NOT_ELIGIBLE", "x"))
+        .thenThrow(new IllegalStateException("private-database-details"));
+    service.recoverAndRestartTopupRecovery(1, 2, "사유", key);
+    verify(audit).complete(3, Outcome.BATCH_RECOVER_RESTART_ACCEPTED);
+    service.recoverAndRestartTopupRecovery(1, 2, "사유", key);
+    verify(audit).complete(3, Outcome.BATCH_RECOVER_REJECTED);
+    service.recoverAndRestartTopupRecovery(1, 2, "사유", key);
+    verify(audit).complete(3, Outcome.BATCH_RESULT_UNCONFIRMED);
+  }
+
+  @Test
   void uncertainBatchExceptionIsNotReportedAsDefiniteFailure() throws Exception {
     when(batch.restart(1, 3, 2)).thenThrow(new IllegalStateException("private-database-details"));
     service.restartTopupRecovery(1, 2, "사유", key);

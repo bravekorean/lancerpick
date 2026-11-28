@@ -22,7 +22,11 @@ public final class AdminFinanceResponses {
     JOB_RUNNING,
     JOB_NOT_RESTARTABLE,
     NEWER_EXECUTION_EXISTS,
-    INVALID_JOB_PARAMETERS
+    INVALID_JOB_PARAMETERS,
+    /** 중단 실행 정리: 실행 중 상태(STARTING·STARTED·STOPPING)가 아니다. 실패·중지 실행은 일반 재시작을 쓴다. */
+    JOB_NOT_INTERRUPTED,
+    /** 중단 실행 정리: 마지막 갱신 후 기준 시간이 지나지 않아 아직 살아 있을 수 있다. */
+    JOB_RECENTLY_UPDATED
   }
 
   /** 조회 시점의 후보 판단이다. 실행 권한/예약을 부여하지 않으며 실제 실행은 재검사가 필요하다. */
@@ -111,7 +115,8 @@ public final class AdminFinanceResponses {
       long creditedCount,
       long filteredCount,
       Map<String, Long> outcomes,
-      Decision restart) {
+      Decision restart,
+      Decision recoverRestart) {
     public RecoveryJob {
       outcomes = Map.copyOf(outcomes);
     }

@@ -12,11 +12,14 @@ import { actionTones, toneOf } from '../statusTone'
 import { useMountedRef } from '../../../shared/lib/useMountedRef'
 
 const BUTTONS: Record<ReprocessAction, string> = {
-  TOPUP_RECHECK: '재확인 요청', TOPUP_RECOVERY_RESTART: '재시작 요청', CONTRACT_PDF_REGENERATE: 'PDF 다시 만들기 요청',
+  TOPUP_RECHECK: '재확인 요청', TOPUP_RECOVERY_RESTART: '재시작 요청', TOPUP_RECOVERY_RECOVER_RESTART: '정리 후 재시작 요청',
+  CONTRACT_PDF_REGENERATE: 'PDF 다시 만들기 요청',
 }
 const EFFECTS: Record<ReprocessAction, string> = {
   TOPUP_RECHECK: '저장된 결제 정보로 결제사에 한 번 조회해요. 새 결제 승인·잔액 직접 수정은 하지 않아요.',
   TOPUP_RECOVERY_RESTART: '실패·중지된 복구 작업을 같은 조건으로 다시 시작해요. 접수돼도 작업이 바로 끝나는 것은 아니에요.',
+  TOPUP_RECOVERY_RECOVER_RESTART:
+    '서버가 멈춰 "실행 중"으로 남은 기록을 실패로 정리하고 같은 작업을 다시 시작해요. 서버가 실제로 멈췄는지 먼저 확인해 주세요. 이미 반영된 충전은 다시 지급하지 않아요.',
   CONTRACT_PDF_REGENERATE: '현재 계약의 PDF를 다시 만들어요. 이미 완성·서명된 파일은 바꾸지 않아요.',
 }
 

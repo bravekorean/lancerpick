@@ -213,11 +213,12 @@ AdminProductSummary: id,title,priceAmount,durationDays,category(id,name),seller(
 | GET /admin/finance/topups/{id} | 없음 | 충전 상세 |
 | GET /admin/finance/payments | orderId,buyerId,sellerId,status,policyVersion,page,size | 결제·환불 목록 |
 | GET /admin/finance/orders/{orderId} | 없음 | 주문 금액·결제·보관금·정산·종료 분배(없는 기록은 null) |
-| GET /admin/finance/recovery-jobs | page,size | 충전 복구 Job 인스턴스별 최신 실행·재시작 후보 판단 |
+| GET /admin/finance/recovery-jobs | page,size | 충전 복구 Job 인스턴스별 최신 실행·재시작 후보(`restart`)·중단 실행 정리 후보(`recoverRestart`) 판단 |
 | GET /admin/finance/recovery-jobs/{executionId} | 없음 | 실행 상세 |
 | GET /admin/orders/{orderId}/contract-pdf | version(선택) | 계약 PDF 메타데이터·생성 후보 판단 |
 | POST /admin/finance/topups/{id}/recheck | reason(1~1,000자), requestKey(UUID) | 감사 receipt. 새 요청 202, 같은 키 재전송 200(재실행 없음) |
 | POST /admin/finance/recovery-jobs/{executionId}/restart | reason, requestKey | 감사 receipt(202/200). 재시작 수락은 Job 완료가 아님 |
+| POST /admin/finance/recovery-jobs/{executionId}/recover-restart | reason, requestKey | 프로세스 종료로 STARTED 등에 남은 실행을 FAILED 정리 후 재시작. 감사 receipt(202/200). 이 서버 실행 중·최근 갱신이면 거절([중단 실행 정리](features.md#b-1088-0)) |
 | POST /admin/orders/{orderId}/contract-pdf/regenerate | reason, requestKey, version(선택, 생략 시 현재 계약) | 감사 receipt(202/200) |
 | GET /admin/action-logs | action, targetId(action과 함께만), orderId, page, size(1~100) | 관리자 작업 감사 이력(요청 ID 내림차순) |
 

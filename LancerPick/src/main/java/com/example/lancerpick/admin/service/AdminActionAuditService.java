@@ -42,6 +42,12 @@ public class AdminActionAuditService {
     BATCH_RESTART_ACCEPTED(AdminActionStatus.SUCCEEDED),
     BATCH_RESTART_REJECTED(AdminActionStatus.REJECTED),
     BATCH_RESULT_UNCONFIRMED(AdminActionStatus.UNKNOWN),
+    /** 중단 실행을 FAILED로 정리하고 같은 JobInstance 재시작 호출까지 수락됐다(Job 완료를 뜻하지 않음). */
+    BATCH_RECOVER_RESTART_ACCEPTED(AdminActionStatus.SUCCEEDED),
+    /** 실행 직전 재검사에서 중단 실행이 아니어서 아무것도 바꾸지 않았다. */
+    BATCH_RECOVER_REJECTED(AdminActionStatus.REJECTED),
+    /** FAILED 정리는 됐지만 재시작이 Batch 규칙에 거절됐다. 일반 재시작으로 다시 시도할 수 있다. */
+    BATCH_RECOVERED_RESTART_REJECTED(AdminActionStatus.FAILED),
     PDF_GENERATED(AdminActionStatus.SUCCEEDED),
     PDF_GENERATION_FAILED(AdminActionStatus.FAILED),
     PDF_STATE_CHANGED(AdminActionStatus.REJECTED),

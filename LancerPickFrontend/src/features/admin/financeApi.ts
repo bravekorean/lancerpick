@@ -33,6 +33,8 @@ export interface OrderFinance {
 interface RecoveryJob {
   executionId: string | null; instanceId: string; status: string; scanRequestedAt: string | null
   readCount: number; creditedCount: number; filteredCount: number; outcomes: Record<string, number>; restart: Decision
+  /** 프로세스 종료로 실행 중 상태에 남은 실행의 정리·재시작 후보. 실패·중지 실행은 restart를 쓴다. */
+  recoverRestart: Decision
 }
 
 export interface ContractPdf {
@@ -125,6 +127,7 @@ const REASONS: Record<string, string> = {
   LEASE_ACTIVE: '다른 작업이 처리 중', RETRY_DELAY: '다음 재시도 시각 전', AUTOMATIC_LIMIT_REACHED: '자동 재시도 횟수 초과',
   RECOVERY_DISABLED: '복구 기능 꺼짐', PROVIDER_DISABLED: '결제 연동 꺼짐', JOB_RUNNING: '실행 중',
   JOB_NOT_RESTARTABLE: '재시작할 수 없는 상태', NEWER_EXECUTION_EXISTS: '더 최근 실행이 있음', INVALID_JOB_PARAMETERS: '실행 조건 값 오류',
+  JOB_NOT_INTERRUPTED: '중단된 실행이 아님', JOB_RECENTLY_UPDATED: '최근까지 기록이 갱신돼 실행 중일 수 있음',
   NOT_CURRENT_VERSION: '현재 버전이 아님', ORDER_NOT_WRITABLE: '지금 주문 상태에서는 생성 불가', CANCELLATION_PENDING: '취소 요청 대기 중',
   DOCUMENT_READY: '문서 생성 완료', DOCUMENT_SIGNED: '서명 완료', GENERATION_ACTIVE: '생성 중',
   CLOCK_BEFORE_UPDATE: '서버 시각 확인 필요', UNSUPPORTED_STATE: '지원하지 않는 상태',

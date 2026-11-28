@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.example.lancerpick.admin.dto.AdminFinanceResponses;
 import com.example.lancerpick.admin.entity.AdminAction;
 import com.example.lancerpick.admin.entity.AdminActionStatus;
 import com.example.lancerpick.admin.service.*;
@@ -19,6 +20,7 @@ import com.example.lancerpick.order.entity.OrderSnapshot;
 import com.example.lancerpick.order.repository.OrderRepository;
 import com.example.lancerpick.order.repository.OrderSnapshotRepository;
 import com.example.lancerpick.support.IntegrationTest;
+import com.example.lancerpick.wallet.batch.TopupRecoveryLocalExecutions;
 import com.example.lancerpick.wallet.gateway.TossGatewayException;
 import com.example.lancerpick.wallet.gateway.TossPaymentGateway;
 import com.example.lancerpick.wallet.gateway.TossPaymentGateway.Payment;
@@ -78,6 +80,8 @@ class AdminReprocessingIntegrationTests {
   @MockitoSpyBean ContractPdfRenderer renderer;
   @MockitoSpyBean PrivateContractStorage storage;
   @MockitoSpyBean WalletEntryRepository entries;
+  @MockitoSpyBean TopupRecoveryLocalExecutions localExecutions;
+  @Autowired AdminFinanceQueryService finance;
   long admin, otherAdmin, buyer, seller, orderId, product, category;
   final List<Long> memberIds = new ArrayList<>();
   final List<Long> instances = new ArrayList<>();
@@ -107,7 +111,7 @@ class AdminReprocessingIntegrationTests {
 
   @AfterEach
   void cleanup() throws IOException {
-    reset(entries, renderer);
+    reset(entries, renderer, localExecutions);
     for (long id : memberIds) jdbc.update("DELETE FROM admin_action_logs WHERE admin_id=?", id);
     if (orderId != 0) {
       var files =
@@ -342,6 +346,147 @@ class AdminReprocessingIntegrationTests {
             () -> service.restartTopupRecovery(admin, execution.getId(), "진행 중", UUID.randomUUID()))
         .isInstanceOf(BusinessException.class);
     assertThat(jobs.getJobExecution(execution.getId()).getStatus()).isEqualTo(BatchStatus.STARTED);
+  }
+
+  @Test
+  void interruptedExecutionIsRecoveredThenRestartedOnceAndReplayChangesNothing() {
+    var crashed = interruptedJob(Duration.ofHours(1));
+    assertThat(finance.recoveryJob(admin, crashed.getId()).restart().reason())
+        .isEqualTo(AdminFinanceResponses.BlockReason.JOB_RUNNING);
+    assertThat(finance.recoveryJob(admin, crashed.getId()).recoverRestart().eligible()).isTrue();
+    var key = UUID.randomUUID();
+
+    var result = service.recoverAndRestartTopupRecovery(admin, crashed.getId(), "프로세스 종료 확인", key);
+
+    assertThat(result.replay()).isFalse();
+    assertThat(result.receipt().action()).isEqualTo(AdminAction.TOPUP_RECOVERY_RECOVER_RESTART);
+    assertThat(result.receipt().targetType()).isEqualTo("BATCH_JOB_EXECUTION");
+    assertThat(result.receipt().status()).isEqualTo(AdminActionStatus.SUCCEEDED);
+    assertThat(result.receipt().resultCode()).isEqualTo("BATCH_RECOVER_RESTART_ACCEPTED");
+    var original = jobs.getJobExecution(crashed.getId());
+    assertThat(original.getStatus()).isEqualTo(BatchStatus.FAILED);
+    assertThat(original.getStepExecutions())
+        .allSatisfy(step -> assertThat(step.getStatus()).isEqualTo(BatchStatus.FAILED));
+    var latest = jobs.getLastJobExecution(crashed.getJobInstance());
+    assertThat(latest.getId()).isNotEqualTo(crashed.getId());
+    assertThat(latest.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+    assertThat(jobs.getJobExecutions(crashed.getJobInstance())).hasSize(2);
+
+    // 같은 키 재전송은 recover·restart를 다시 부르지 않는다.
+    assertThat(
+            service.recoverAndRestartTopupRecovery(admin, crashed.getId(), "프로세스 종료 확인", key).replay())
+        .isTrue();
+    assertThat(jobs.getJobExecutions(crashed.getJobInstance())).hasSize(2);
+    // 이미 정리된 실행에 새 키로 다시 요청해도 접수 전에 거절된다.
+    assertThatThrownBy(
+            () ->
+                service.recoverAndRestartTopupRecovery(
+                    admin, crashed.getId(), "다시 정리", UUID.randomUUID()))
+        .isInstanceOfSatisfying(
+            BusinessException.class, e -> assertThat(e.code()).isEqualTo("ADMIN_ACTION_NOT_ELIGIBLE"));
+    assertThat(jobs.getJobExecutions(crashed.getJobInstance())).hasSize(2);
+  }
+
+  @Test
+  void recentlyUpdatedOrLocallyRunningOrFailedExecutionIsNeverRecovered() {
+    var recent = interruptedJob(Duration.ofMinutes(5));
+    assertThat(finance.recoveryJob(admin, recent.getId()).recoverRestart().reason())
+        .isEqualTo(AdminFinanceResponses.BlockReason.JOB_RECENTLY_UPDATED);
+    rejectedBeforeAudit(recent.getId());
+    assertThat(jobs.getJobExecution(recent.getId()).getStatus()).isEqualTo(BatchStatus.STARTED);
+
+    var local = interruptedJob(Duration.ofHours(1));
+    localExecutions.beforeJob(local);
+    try {
+      assertThat(finance.recoveryJob(admin, local.getId()).recoverRestart().reason())
+          .isEqualTo(AdminFinanceResponses.BlockReason.JOB_RUNNING);
+      rejectedBeforeAudit(local.getId());
+      assertThat(jobs.getJobExecution(local.getId()).getStatus()).isEqualTo(BatchStatus.STARTED);
+    } finally {
+      localExecutions.afterJob(local);
+    }
+
+    // 실패 실행은 일반 재시작 대상이며 정리 명령의 후보가 아니다.
+    var failed = failedJob();
+    assertThat(finance.recoveryJob(admin, failed.getId()).recoverRestart().reason())
+        .isEqualTo(AdminFinanceResponses.BlockReason.JOB_NOT_INTERRUPTED);
+    rejectedBeforeAudit(failed.getId());
+    assertThat(jdbc.queryForObject(
+            "SELECT COUNT(*) FROM admin_action_logs WHERE admin_id=?", Long.class, admin))
+        .isZero();
+  }
+
+  @Test
+  void executionThatComesAliveAfterAuditIsLeftUntouchedAndRecordedAsRejected() {
+    var crashed = interruptedJob(Duration.ofHours(1));
+    // 접수 검사·claim 재검사까지는 중단으로 보이다가, 실제 recover 직전 재검사에서 이 서버 실행으로 확인되는 경쟁.
+    doReturn(false, false, true).when(localExecutions).isRunningHere(crashed.getId());
+
+    var result =
+        service.recoverAndRestartTopupRecovery(admin, crashed.getId(), "정리 시도", UUID.randomUUID());
+
+    assertThat(result.receipt().status()).isEqualTo(AdminActionStatus.REJECTED);
+    assertThat(result.receipt().resultCode()).isEqualTo("BATCH_RECOVER_REJECTED");
+    var after = jobs.getJobExecution(crashed.getId());
+    assertThat(after.getStatus()).isEqualTo(BatchStatus.STARTED);
+    assertThat(after.getExecutionContext().containsKey("batch.recovered")).isFalse();
+    assertThat(jobs.getJobExecutions(crashed.getJobInstance())).hasSize(1);
+  }
+
+  @Test
+  void ordinaryMemberCannotRecoverInterruptedExecution() {
+    var crashed = interruptedJob(Duration.ofHours(1));
+    assertThatThrownBy(
+            () ->
+                service.recoverAndRestartTopupRecovery(
+                    buyer, crashed.getId(), "확인", UUID.randomUUID()))
+        .isInstanceOf(BusinessException.class);
+    assertThat(jobs.getJobExecution(crashed.getId()).getStatus()).isEqualTo(BatchStatus.STARTED);
+  }
+
+  private void rejectedBeforeAudit(long executionId) {
+    assertThatThrownBy(
+            () ->
+                service.recoverAndRestartTopupRecovery(
+                    admin, executionId, "정리 시도", UUID.randomUUID()))
+        .isInstanceOfSatisfying(
+            BusinessException.class, e -> assertThat(e.code()).isEqualTo("ADMIN_ACTION_NOT_ELIGIBLE"));
+  }
+
+  /** 프로세스가 체크포인트 저장 전에 종료돼 실행·단계가 STARTED로 남고, 마지막 갱신이 silentFor 전인 실행. */
+  org.springframework.batch.core.job.JobExecution interruptedJob(Duration silentFor) {
+    var params =
+        new JobParametersBuilder()
+            .addString("run.id", UUID.randomUUID().toString())
+            .addLong("requestedAtMillis", BASE.toEpochMilli())
+            .toJobParameters();
+    var instance = jobs.createJobInstance("walletTopupRecovery", params);
+    instances.add(instance.getInstanceId());
+    var execution = jobs.createJobExecution(instance, params, new ExecutionContext());
+    execution.setStatus(BatchStatus.STARTED);
+    execution.setStartTime(LocalDateTime.now());
+    jobs.update(execution);
+    var step = jobs.createStepExecution("walletTopupRecoveryStep", execution);
+    step.setStatus(BatchStatus.STARTED);
+    step.setStartTime(LocalDateTime.now());
+    jobs.update(step);
+    // Batch 메타데이터 시각은 서버 기본 시간대의 LocalDateTime이다. 갱신이 멈춘 시점을 과거로 옮긴다.
+    var at = LocalDateTime.now().minus(silentFor);
+    jdbc.update(
+        "UPDATE BATCH_JOB_EXECUTION SET CREATE_TIME=?,START_TIME=?,LAST_UPDATED=? WHERE"
+            + " JOB_EXECUTION_ID=?",
+        at,
+        at,
+        at,
+        execution.getId());
+    jdbc.update(
+        "UPDATE BATCH_STEP_EXECUTION SET CREATE_TIME=?,START_TIME=?,LAST_UPDATED=? WHERE"
+            + " STEP_EXECUTION_ID=?",
+        at,
+        at,
+        at,
+        step.getId());
+    return jobs.getJobExecution(execution.getId());
   }
 
   @Test

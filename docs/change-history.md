@@ -10,6 +10,19 @@
 
 린트·타입 검사 포함 빌드·test:api 349건 통과. Edge API 대역 320/390/720px 및 데스크톱 전환에서 검색 열기/닫기/포커스/URL/입력 유지와 일반·판매자·관리자·비로그인·프로필 미등록 메뉴를 확인했다. 기존 메시지/알림 헤더 접근·로그아웃·대화 입력 보존도 회귀 확인했다. 실제 모바일 기기·서버 검증과 구분한다. 더미 SQL·개인 자료는 보존하며 push·PR은 진행하지 않았다.
 
+<a id="topup-recovery-interrupted-recover"></a>
+### 프로세스 종료로 STARTED에 남은 충전 복구 실행의 관리자 정리·재시작 — 2026-11-28
+
+bravekorean 요청, Claude Code 작성(Codex 검증 전). main `f7ee1ea` 기준 브랜치 `claude/project-thread-vfit41`. [중단 실행 검증](#wallet-lock-crash-recovery-check)에서 남은 범위로 둔 "운영자가 중단을 확인한 뒤 `recover`를 실행하는 경로"를 K6 관리자 재처리 명령으로 추가했다.
+
+- 명령: `POST /api/admin/finance/recovery-jobs/{executionId}/recover-restart`(본문 `reason`·`requestKey`, `version` 불가), 감사 명령 `TOPUP_RECOVERY_RECOVER_RESTART`(대상 `BATCH_JOB_EXECUTION`). 기존 재처리와 같이 감사 요청 선행 커밋 → claim 트랜잭션 재검사 → 트랜잭션 밖 `JobOperator.recover`(FAILED 정리) → 같은 JobInstance `restart` → 결과 별도 커밋 순서다. 기존 재시작 명령은 그대로 STARTED를 거절한다.
+- 중단 판단(`wallet/batch/TopupRecoveryInterruption`): 최신 실행이고 상태가 STARTING·STARTED·STOPPING이며, 이 서버 프로세스에서 실행 중이 아니고(`TopupRecoveryLocalExecutions` Job 리스너), Job·Step 실행의 마지막 갱신 시각 중 가장 늦은 값이 `lancerpick.wallet.topup-recovery.interrupted-after-seconds`(기본 1800초, 600~86400, 처리권 시간의 2배 이상) 이전일 때만 후보다. Tasklet은 충전 한 건마다 Step을 커밋하므로 살아 있는 실행은 이 값이 계속 바뀐다. 기록 시각이 없거나 현재보다 뒤면 후보로 보지 않는다. 이 규칙을 관리자 조회의 `recoverRestart` 판단, 접수 검사, claim 재검사, recover 직전 재검사가 함께 쓴다.
+- 결과 코드: `BATCH_RECOVER_RESTART_ACCEPTED`(SUCCEEDED, 재시작 접수이며 Job 완료가 아님), `BATCH_RECOVER_REJECTED`(REJECTED, 실행 직전 재검사에서 중단이 아님, 메타데이터 변경 없음), `BATCH_RECOVERED_RESTART_REJECTED`(FAILED, FAILED 정리는 됐지만 재시작이 Batch 규칙에 거절됨, 일반 재시작으로 다시 시도), 그 밖의 예외는 기존 `BATCH_RESULT_UNCONFIRMED`.
+- DB: [V14](../LancerPick/src/main/resources/db/migration/V14__allow_topup_recovery_recover_restart_action.sql)가 `admin_action_logs.ck_admin_action_pair`에 새 명령·대상 쌍만 추가한다. 열·인덱스·기존 행은 바꾸지 않는다. team-roles.md의 DB 담당(황준범) 검토가 필요하다.
+- 화면: `/admin/finance` 복구 작업 목록에 "중단 실행 정리" 판단과 정리 후 재시작 칸을 추가했다(후보일 때만 입력 가능, 실패·중지 실행은 기존 재시작 칸).
+- 검증(로컬 JDK 25·MySQL 8.0, CI는 8.4): `AdminReprocessingIntegrationTests`의 정리 후 재시작 1회·재전송 재실행 없음·재요청 접수 전 거절, 최근 갱신·이 서버 실행·실패 실행 거절(감사 기록 없음), 접수 뒤 실행 직전 재검사 거절 시 STARTED 유지, 일반 회원 거절. `TopupRecoveryIntegrationTests`의 기존 중단 실행 테스트는 `JobOperator.recover` 직접 호출 대신 운영 경로 메서드(`recoverInterrupted`)로 바꾸고 최근 갱신 거절을 추가했다. 판단 규칙 단위 테스트, API·서비스·후보 판단 테스트, 프런트 `test:api` 포함.
+- 한계: 다른 서버 프로세스에서 실행 중인지는 마지막 갱신 시각으로만 판단한다. 한 건 처리가 기준 시간보다 오래 멈춰 있는 살아 있는 실행은 정리될 수 있다(이때도 Batch 버전 검사와 충전 처리권·상태 확인이 중복 지급을 막는다고 보지만 재현하지 않음, **확인 필요**). 같은 실행에 일반 재시작과 정리 명령이 동시에 들어오는 경쟁은 감사 진행 중 UNIQUE가 명령별이라 막지 않고 Batch의 재시작 중복 검사에 맡긴다. 실제 JVM 종료·여러 서버·브라우저 확인은 하지 않았다(**확인 필요**).
+
 <a id="lock-wait-resource-busy"></a>
 ### 잠금 대기 한도 단축과 409 RESOURCE_BUSY 응답 — 2026-11-28
 
@@ -21,7 +34,7 @@
 - 롤백 범위(리뷰 후 정정): 충전 승인(`WalletTopupApprovalService.confirm`)·관리자 충전 재확인(`AdminTopupRecheckService.recheck`)은 짧은 트랜잭션 여러 개를 잇는다. 뒤 단계(예: 토스 승인 뒤 `unknown` 기록)에서 잠금 대기가 초과되면 앞 단계(PROCESSING 전환·재확인 선점)는 이미 커밋돼 있고 토스 승인도 끝났을 수 있다. 이때도 409가 나가므로 응답 문구를 "반영되지 않았습니다"에서 "요청을 완료하지 못했습니다. 잠시 후 상태를 확인하고 다시 시도해 주세요"로 바꿨다. 같은 요청을 다시 보내면 PROCESSING·UNKNOWN 충전은 승인을 다시 실행하지 않고 현재 상태를 돌려주며, 미확정 건은 결과 재확인·복구 배치가 처리한다(코드 경로 확인, 이 경로의 잠금 실패 자체는 테스트로 재현하지 않음).
 - 검증: `WalletLockContentionIntegrationTests.walletLockTimeoutOverHttpIsRetryableConflictAndRetrySucceeds`(409·`Retry-After`·금액 불변, 재요청 200·한 번 차감), `DatabaseLockWaitTimeoutTests`(풀 커넥션의 세션 값 5초). 409 테스트는 같은 클래스의 테스트 커넥션 대기 한도 2초에서 실행된다. 기본값 5초는 세션 값으로만 확인했고, 5초 대기 뒤 409가 나는 것을 따로 재현하지는 않았다. 로컬 Docker MySQL 8.4·JDK 25 `./gradlew clean build` 1,160건 통과(측정용 2건 skip, PR #3 기록), 원격 CI는 `60d4d9e` push 실행 성공.
 - 관리자 재처리(리뷰 후 보완, PR #5): `AdminReprocessingService.execute`는 업무 실행 뒤 별도 트랜잭션에서 `audit.complete`로 결과를 저장한다(L108). 이 단계가 잠금 대기에 실패하면 업무가 반영됐어도 409 `RESOURCE_BUSY`가 나갈 수 있는데, 관리자 화면은 첫 요청의 4xx를 확정 거절로 보고 요청 키를 지웠다. 다시 제출하면 같은 키로 결과를 확인하는 대신 새 요청이 들어갈 수 있었다. `reprocessApi.submitReprocess`가 `RESOURCE_BUSY`를 결과 불명으로 다뤄 키·본문을 보존하도록 고쳤다. 검증: `tests/admin-reprocess.test.mjs`의 RESOURCE_BUSY 테스트(수정 전 실패·수정 후 통과), 프런트 `test:api` 355건·`typecheck`·`lint`·`build` 통과. 서버의 `audit.complete` 잠금 실패 자체는 재현하지 않았고, 브라우저 확인은 하지 않았다(**확인 필요**).
-- 한계: 5초보다 오래 걸리는 정상 잠금 보유가 있으면 그 경쟁 요청은 409가 된다. 현재 외부 통신(토스·PDF·메일)은 잠금 트랜잭션 밖에서 실행된다. 프로세스 종료로 STARTED에 남은 충전 복구 실행을 `recover`하는 관리자 경로는 이번에도 추가하지 않았다. 프런트는 `RESOURCE_BUSY`를 따로 다루지 않고 주문 상세에서 서버 문구와 코드를 그대로 보여 주며 `Retry-After`는 쓰지 않는다. 브라우저·실서버에서 이 안내를 확인하지 않았다(**확인 필요**).
+- 한계: 5초보다 오래 걸리는 정상 잠금 보유가 있으면 그 경쟁 요청은 409가 된다. 현재 외부 통신(토스·PDF·메일)은 잠금 트랜잭션 밖에서 실행된다. 프로세스 종료로 STARTED에 남은 충전 복구 실행을 `recover`하는 관리자 경로는 이번에도 추가하지 않았다(이후 [정리 명령](#topup-recovery-interrupted-recover)으로 추가). 프런트는 `RESOURCE_BUSY`를 따로 다루지 않고 주문 상세에서 서버 문구와 코드를 그대로 보여 주며 `Retry-After`는 쓰지 않는다. 브라우저·실서버에서 이 안내를 확인하지 않았다(**확인 필요**).
 
 
 <a id="wallet-lock-crash-recovery-check"></a>
@@ -44,7 +57,7 @@
 
 **확인된 한계와 후속 후보(미구현).**
 - (같은 날 해결) 앱에 잠금 대기 한도 설정이 없어 운영 DB에서는 MySQL 기본값(50초, 설정에서 추론)까지 기다린 뒤 500으로 끝날 수 있었다. 대기 한도 5초와 409 `RESOURCE_BUSY` 응답으로 고쳤다([수정](#lock-wait-resource-busy)).
-- 프로세스가 죽어 STARTED로 남은 복구 실행은 관리자 Batch 재시작으로 되살릴 수 없다(기존 `runningJobIsNotForcedIntoRestartOrFailedState`가 의도한 동작). 중단 여부를 운영자가 확인한 뒤 `recover`를 실행하는 경로는 현재 코드에 없다. 이 시나리오의 금액 안전성은 충전 상태 확인이 보장하고, 남은 미처리 건은 새 복구 실행이나 사용자 재확인으로도 처리된다.
+- 프로세스가 죽어 STARTED로 남은 복구 실행은 관리자 Batch 재시작으로 되살릴 수 없다(기존 `runningJobIsNotForcedIntoRestartOrFailedState`가 의도한 동작). 중단 여부를 운영자가 확인한 뒤 `recover`를 실행하는 경로는 당시 코드에 없었다(같은 날 [관리자 정리 명령](#topup-recovery-interrupted-recover)으로 추가). 이 시나리오의 금액 안전성은 충전 상태 확인이 보장하고, 남은 미처리 건은 새 복구 실행이나 사용자 재확인으로도 처리된다.
 - 프로세스 강제 종료는 메타데이터 상태로 재현했다. 실제 JVM 종료·DB 연결 끊김은 실행하지 않았다.
 
 <a id="presentation-candidate-check"></a>

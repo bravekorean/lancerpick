@@ -1938,7 +1938,7 @@ J5는 기존 PROCESSING/UNKNOWN 충전과 저장된 payment_key를 조회해 복
 
 고정 Job 이름 `walletTopupRecovery`만 조회한다. 같은 인스턴스의 **최신 실행**이 `FAILED` 또는 `STOPPED`이고, 복구 설정·토스 설정·허용 파라미터가 유효할 때만 후보가 된다. 실행 중은 `JOB_RUNNING`, 이전 실행은 `NEWER_EXECUTION_EXISTS`, 잘못된 파라미터는 `INVALID_JOB_PARAMETERS`, 나머지 상태는 `JOB_NOT_RESTARTABLE`이다.
 
-`STARTED`·`UNKNOWN`·`ABANDONED`를 임의로 실패로 바꾸거나 강제 재시작하지 않는다. 프로세스 종료 확인과 이력 복구는 [Batch 운영 경계](features.md#b-1088-0)를 따른다. 기존 `TopupRecoveryJobService.start()` / `restart(executionId)`는 내부 조율용 그대로이며 관리자 API를 직접 붙인 상태가 아니다.
+재시작 후보는 `STARTED`·`UNKNOWN`·`ABANDONED`를 임의로 실패로 바꾸거나 강제 재시작하지 않는다. 프로세스 종료로 실행 중 상태에 남은 실행은 별도 판단 `recoverRestart`와 관리자 정리 명령이 다룬다([Batch 운영 경계](features.md#b-1088-0)). `recoverRestart` 차단 사유는 `RECOVERY_DISABLED`·`INVALID_JOB_PARAMETERS`·`JOB_NOT_INTERRUPTED`(실행 중 상태가 아님)·`NEWER_EXECUTION_EXISTS`·`JOB_RUNNING`(이 서버에서 실행 중)·`JOB_RECENTLY_UPDATED`(기준 시간 안에 갱신됨)·`PROVIDER_DISABLED`다. `TopupRecoveryJobService`는 관리자 명령(`AdminBatchRestartService`)이 감사·재검사 뒤에만 호출한다.
 
 ##### 처리 범위
 
@@ -1980,7 +1980,11 @@ Batch `scanRequestedAt`은 허용된 `requestedAtMillis` 파라미터를 UTC로 
 
 Job 파라미터는 `run.id`(UUID)와 `requestedAtMillis`(0 이상, UTC 9999년 이내 epoch 밀리초) 두 개만 허용한다. 규칙은 `wallet/batch/TopupRecoveryJobParameters` 하나에 있고 Job 검증기(시작과 저장된 파라미터로 재시작할 때 모두 적용, 재시작 실패는 `JobRestartException`)와 관리자 재시작 판단(`INVALID_JOB_PARAMETERS`)이 같이 쓴다. Step 컨텍스트에는 `highestId`·`lastId`와 `completed`·`failed`·`deferred`·`exhausted`·`stale` 집계만 업무 값으로 저장한다. 프레임워크의 기본 체크포인트 항목도 함께 저장된다. 결제 키·처리권 토큰·외부 응답 원문은 저장하지 않는다. 업무 예외는 고정 오류 코드로 바꿔 Batch 실패 메타데이터에 제공자 원문이 들어가지 않도록 한다.
 
-프로세스 강제 종료로 메타데이터가 `STARTED`에 남으면 바로 `restart`할 수 없다. 새 Job 실행은 만료된 처리권을 다시 확보해 업무 복구를 계속할 수 있다. 예전 실행 이력의 복구는 작업자 종료를 운영자가 확인한 후 Spring Batch `JobOperator.recover`로 실패 상태를 정리하는 별도 운영 절차다. 실행 중인 작업을 자동으로 종료된 것으로 간주하거나 강제 복구하는 API는 제공하지 않는다.
+| `TopupRecoveryJobService.recoverInterrupted(executionId)` | 메타데이터를 다시 읽어 중단 판단을 재검사한 뒤 `JobOperator.recover`로 FAILED 정리. 조건이 맞지 않으면 바꾸지 않고 `JobRestartException`. 재시작은 하지 않음 |
+
+프로세스 강제 종료로 메타데이터가 `STARTED`에 남으면 바로 `restart`할 수 없다. 새 Job 실행은 만료된 처리권을 다시 확보해 업무 복구를 계속할 수 있다. 예전 실행 이력은 운영자가 작업자 종료를 확인한 뒤 관리자 정리 명령(`POST /api/admin/finance/recovery-jobs/{executionId}/recover-restart`, 감사 명령 `TOPUP_RECOVERY_RECOVER_RESTART`)으로 FAILED 정리 후 같은 JobInstance로 재시작한다(2026-11-28, [변경 기록](change-history.md#topup-recovery-interrupted-recover)). 자동 정리는 하지 않는다.
+
+중단 판단(`wallet/batch/TopupRecoveryInterruption`, 조회 판단·접수·claim 재검사·recover 직전이 같은 규칙): 최신 실행, 상태 STARTING·STARTED·STOPPING, 이 서버 프로세스에서 실행 중 아님(Job 리스너 `TopupRecoveryLocalExecutions`), Job·Step 실행의 가장 늦은 갱신 시각(LAST_UPDATED, 없으면 시작·생성 시각)이 `lancerpick.wallet.topup-recovery.interrupted-after-seconds`(기본 1800, 600~86400, `lease-seconds`의 2배 이상) 이전. Batch가 이 시각을 서버 기본 시간대 `LocalDateTime.now()`로 저장하므로 비교도 같은 기준이다. 기록이 없거나 현재보다 뒤면 후보가 아니다. 다른 서버의 실행 여부는 갱신 시각으로만 판단한다. 결과 코드는 `BATCH_RECOVER_RESTART_ACCEPTED`(재시작 접수, Job 완료 아님)·`BATCH_RECOVER_REJECTED`(변경 없음)·`BATCH_RECOVERED_RESTART_REJECTED`(FAILED 정리만 됨, 일반 재시작 가능)·`BATCH_RESULT_UNCONFIRMED`다.
 
 #### 실행·환경
 
@@ -2065,7 +2069,7 @@ Job 파라미터는 `run.id`(UUID)와 `requestedAtMillis`(0 이상, UTC 9999년 
 
 화면:
 
-- `/admin/finance` 충전 탭은 `manualRecheck.eligible`, 충전 복구 작업 탭은 `restart.eligible`이고 실행 번호가 있을 때만 "재처리" 칸(접힌 상태)을 보여 준다. `/admin/finance/orders/:id`의 계약 PDF 칸은 현재 버전이고 생성 후보일 때, 조회한 version으로 요청한다.
+- `/admin/finance` 충전 탭은 `manualRecheck.eligible`, 충전 복구 작업 탭은 `restart.eligible`이고 실행 번호가 있을 때만 "재처리" 칸(접힌 상태)을 보여 준다. 실행 중 상태로 남은 실행은 "중단 실행 정리" 판단을 함께 보여 주고 `recoverRestart.eligible`일 때 정리 후 재시작 칸을 연다(2026-11-28). `/admin/finance/orders/:id`의 계약 PDF 칸은 현재 버전이고 생성 후보일 때, 조회한 version으로 요청한다.
 - 버튼을 누를 때 `crypto.randomUUID()`로 requestKey를 한 번 만든다. 보낸 요청은 계정별 Query 메모리(`['admin','reprocess',명령,대상]`)에 보관해 화면을 이동해도 남고 로그아웃·계정 전환 때 지워진다.
 - 통신 오류·5xx는 "서버가 이미 처리했을 수 있어요"로 바꾸고 **같은 키·같은 사유로만** "같은 요청으로 결과 확인"을 허용한다(후보에서 빠져도 이 확인은 가능). 409 `RESOURCE_BUSY`(잠금 대기 초과)는 4xx지만 결과 저장(`audit.complete`) 단계의 실패일 수 있어 업무가 이미 반영됐을 수 있으므로, 통신 오류와 같이 요청을 남기고 같은 키로 결과를 확인하게 한다(2026-11-28). 그 밖의 첫 요청의 명확한 4xx는 기록이 없으므로 지우고, 불명확했던 요청의 재전송이 거절되면 첫 요청 결과를 단정하지 않고 그대로 둔다.
 - 자동 재시도·처리 중 재전송은 없다(ref와 `sending` 상태로 두 번 클릭 방지). 클릭 시 계정 경계(`captureAccountScope`)를 잡아 계정이 바뀌면 보내지 않고 응답도 반영하지 않는다. 응답 뒤 금융 조회와 작업 이력을 다시 읽는다.
