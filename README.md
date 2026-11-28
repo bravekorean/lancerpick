@@ -38,4 +38,4 @@
 - **판매 수익**에서 상품명·주문번호로 검색하면 목록과 합계에 같은 조건이 적용되도록 연결했습니다. 지갑 원장을 확인해 실제 적립금 지급과 수익 기록만 남은 기존 거래를 화면에서 구분했습니다.
 - **거래 상세**를 거래 진행·계약 및 조건·거래 기록 세 탭으로 나눴습니다. 탭을 옮겨도 작성 중인 입력을 유지하고, 320px 화면에서 가로 넘침 없이 탐색할 수 있는지 확인했습니다. [판매 수익 기능](docs/features.md#finance-settlement) · [거래 화면 검증](docs/change-history.md#v3-representative-trade-check)
 
-[백엔드 실행](LancerPick/README.md#실행) · [프런트엔드 실행](LancerPickFrontend/README.md#팀원-실행) · [프로젝트 문서](docs/README.md)
+[백엔드 실행](LancerPick/README.md#실행) · [프런트엔드 실행](LancerPickFrontend/README.md#팀원-실행) · [프로젝트 문서](docs/README.md) · [자기소개서·포트폴리오 관리 기준](docs/interview-design-notes.md)

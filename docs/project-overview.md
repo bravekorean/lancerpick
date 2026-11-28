@@ -10,12 +10,12 @@ LancerPick(랜서픽)은 고정 가격의 프리랜서 서비스를 등록하고
 
 ## 현재 코드에서 확인한 기술 스택
 
-2026-11-09 작업 트리 main a7e889b의 빌드·설정을 정적으로 확인했다. 설치·서비스 기동·테스트는 이번 정리에서 다시 실행하지 않았다.
+2026-11-09 작업 트리 main a7e889b의 빌드·설정을 정적으로 확인했다. 마이그레이션 범위는 2026-11-28 main `782508f`에서 다시 대조했다. 설치·서비스 기동·테스트는 이번 정리에서 다시 실행하지 않았다.
 
 | 영역 | 현재 선언·구조 | 근거 |
 | --- | --- | --- |
 | 백엔드 | Java 25, Spring Boot 4.1.2, MVC·Security·Validation·JPA·QueryDSL 7.7 | [build.gradle](../LancerPick/build.gradle) |
-| 데이터 | MySQL 8.4 설계 기준, Flyway V1~V11, Hibernate validate·UTC | [설정](../LancerPick/src/main/resources/application.properties), [마이그레이션](../LancerPick/src/main/resources/db/migration) |
+| 데이터 | MySQL 8.4 설계 기준, Flyway V1~V13(업무 33개·Batch 시스템 9개), Hibernate validate·UTC | [설정](../LancerPick/src/main/resources/application.properties), [마이그레이션](../LancerPick/src/main/resources/db/migration) |
 | 프런트 | React 19.3.0, TypeScript ~5.9.3, Vite 8.3.5, React Router 7.18.5, TanStack Query 5.105.0, CSS Modules | [package.json](../LancerPickFrontend/package.json) |
 | 소통·외부 연동 | WebSocket/STOMP·@stomp/stompjs 7.2.0, MySQL 아웃박스, Spring Mail, PDFBox 3.0.8, Toss 테스트 SDK 2.10.0, Spring Batch JDBC | 빌드·패키지 선언 및 도메인 계약 |
 | 개발·협업 | Gradle Wrapper, GitHub Actions, 격리 MySQL 테스트, Mailpit 로컬 확인 기록 | [구조·개발 환경](architecture.md), [협업](team-roles.md) |
