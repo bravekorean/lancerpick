@@ -1,7 +1,9 @@
 package com.example.lancerpick.admin.service;
 
 import static com.example.lancerpick.admin.dto.AdminFinanceResponses.BlockReason.INVALID_JOB_PARAMETERS;
+import static com.example.lancerpick.admin.dto.AdminFinanceResponses.BlockReason.JOB_NOT_INTERRUPTED;
 import static com.example.lancerpick.admin.dto.AdminFinanceResponses.BlockReason.JOB_NOT_RESTARTABLE;
+import static com.example.lancerpick.admin.dto.AdminFinanceResponses.BlockReason.JOB_RECENTLY_UPDATED;
 import static com.example.lancerpick.admin.dto.AdminFinanceResponses.BlockReason.JOB_RUNNING;
 import static com.example.lancerpick.admin.dto.AdminFinanceResponses.BlockReason.NEWER_EXECUTION_EXISTS;
 import static com.example.lancerpick.admin.dto.AdminFinanceResponses.BlockReason.PROVIDER_DISABLED;
@@ -9,8 +11,12 @@ import static com.example.lancerpick.admin.dto.AdminFinanceResponses.BlockReason
 
 import com.example.lancerpick.admin.dto.AdminFinanceResponses;
 import com.example.lancerpick.admin.dto.AdminFinanceResponses.Decision;
+import com.example.lancerpick.wallet.batch.TopupRecoveryInterruption;
 import com.example.lancerpick.wallet.batch.TopupRecoveryJobParameters;
+import com.example.lancerpick.wallet.batch.TopupRecoveryLocalExecutions;
 import com.example.lancerpick.wallet.config.TopupRecoveryBatchConfiguration;
+import com.example.lancerpick.wallet.config.TopupRecoveryProperties;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -23,6 +29,7 @@ import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.job.JobInstance;
 import org.springframework.batch.core.launch.NoSuchJobException;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -37,12 +44,18 @@ import org.springframework.stereotype.Component;
 public class AdminRecoveryJobQueries {
   private final JobRepository jobs;
   private final boolean recoveryEnabled;
+  private final TopupRecoveryProperties properties;
+  private final ObjectProvider<TopupRecoveryLocalExecutions> local;
 
   public AdminRecoveryJobQueries(
       JobRepository jobs,
-      @Value("${lancerpick.wallet.topup-recovery.enabled:false}") boolean recoveryEnabled) {
+      @Value("${lancerpick.wallet.topup-recovery.enabled:false}") boolean recoveryEnabled,
+      TopupRecoveryProperties properties,
+      ObjectProvider<TopupRecoveryLocalExecutions> local) {
     this.jobs = jobs;
     this.recoveryEnabled = recoveryEnabled;
+    this.properties = properties;
+    this.local = local;
   }
 
   long countInstances() {
@@ -90,7 +103,8 @@ public class AdminRecoveryJobQueries {
           0,
           0,
           Map.of(),
-          Decision.blocked(JOB_NOT_RESTARTABLE));
+          Decision.blocked(JOB_NOT_RESTARTABLE),
+          Decision.blocked(JOB_NOT_INTERRUPTED));
     }
     var execution = jobs.getJobExecution(latest.getId());
     if (execution == null) {
@@ -104,6 +118,7 @@ public class AdminRecoveryJobQueries {
     var status = execution.getStatus();
     OffsetDateTime requestedAt = requestedAt(execution);
     Decision decision = restartDecision(execution, latest, requestedAt, available);
+    Decision recoverRestart = recoverRestartDecision(execution, latest, requestedAt, available);
     long read = 0;
     long credited = 0;
     long filtered = 0;
@@ -131,7 +146,38 @@ public class AdminRecoveryJobQueries {
         credited,
         filtered,
         outcomes,
-        decision);
+        decision,
+        recoverRestart);
+  }
+
+  /**
+   * 중단 실행 정리·재시작 후보. 판단 규칙은 실제 실행 직전 재검사와 같은 {@link TopupRecoveryInterruption}을 쓴다. 재시작 때 저장 파라미터
+   * 검증이 실패할 실행은 정리만 되고 재시작되지 않으므로 처음부터 막는다.
+   */
+  private Decision recoverRestartDecision(
+      JobExecution execution, JobExecution latest, OffsetDateTime requestedAt, boolean available) {
+    if (!recoveryEnabled) {
+      return Decision.blocked(RECOVERY_DISABLED);
+    }
+    if (requestedAt == null) {
+      return Decision.blocked(INVALID_JOB_PARAMETERS);
+    }
+    var registry = local.getIfAvailable();
+    var verdict =
+        TopupRecoveryInterruption.assess(
+            execution,
+            latest,
+            registry != null && registry.isRunningHere(execution.getId()),
+            Instant.now(),
+            properties.interruptedAfter());
+    return switch (verdict) {
+      case NOT_RUNNING_STATUS -> Decision.blocked(JOB_NOT_INTERRUPTED);
+      case NEWER_EXECUTION_EXISTS -> Decision.blocked(NEWER_EXECUTION_EXISTS);
+      case RUNNING_IN_THIS_SERVER -> Decision.blocked(JOB_RUNNING);
+      case RECENTLY_UPDATED -> Decision.blocked(JOB_RECENTLY_UPDATED);
+      case INTERRUPTED ->
+          available ? Decision.ready() : Decision.blocked(PROVIDER_DISABLED);
+    };
   }
 
   private Decision restartDecision(

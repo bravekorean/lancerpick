@@ -21,6 +21,7 @@
 | V11 | members.display_name_changed_at, password_changed_at, password_recommendation_base_at | 32 |
 | V12(#166) | account_challenges 상태 CHECK에 UNKNOWN 추가·대기 결과 조회 인덱스. 신규 테이블/컬럼 없음 | 32 |
 | V13(#167) | admin_action_logs: K6 관리자 재처리 요청·결과·멱등 키·대상별 진행 중 UNIQUE | 33 |
+| V14(작업 브랜치, 미병합) | admin_action_logs 명령·대상 CHECK(`ck_admin_action_pair`)에 `TOPUP_RECOVERY_RECOVER_RESTART`·`BATCH_JOB_EXECUTION` 쌍 추가, 진행 중 UNIQUE 생성 열 `in_progress_key`를 명령별에서 대상별(`target_type:target_id`)로 변경(`uk_admin_action_in_progress` 재생성, 모두 한 `ALTER TABLE` 문). 신규 테이블/컬럼 없음, 기존 행은 생성 열 재계산만([중단 실행 정리](change-history.md#topup-recovery-interrupted-recover), DB 담당 검토 필요) | 33 |
 
 V13 포함 업무 33개 + Batch 시스템 9개 = 42개이며 Flyway 이력 테이블은 제외한다(V12까지는 41개). V11은 nullable 시각 2개와 UTC 기본값이 있는 NOT NULL 권고 기준일을 추가한다. 기존 회원의 과거 비밀번호 변경 시각은 알 수 없으므로 꾸며 넣지 않고 도입 시각부터 첫 6개월 권고 기준을 시작한다.
 

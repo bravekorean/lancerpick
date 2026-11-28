@@ -72,6 +72,19 @@ public class AdminReprocessingController {
     }
 
     /**
+     * 프로세스 종료로 실행 중 상태(STARTED 등)에 남은 충전 복구 실행 정리 후 재시작. 이 서버에서 실행 중이거나 마지막 갱신 후 기준 시간이 지나지 않았으면
+     * 아무것도 바꾸지 않고 거절한다. 수락은 Job 완료를 뜻하지 않는다.
+     */
+    @PostMapping("/api/admin/finance/recovery-jobs/{executionId}/recover-restart")
+    public ResponseEntity<AdminActionReceipt> recoverAndRestartRecoveryJob(Authentication authentication,
+            @PathVariable("executionId") @Min(1) long executionId, @RequestBody AdminReprocessingRequest request) {
+        long admin = admin(authentication);
+        UUID key = requestKey(request);
+        rejectVersion(request);
+        return respond(reprocessing.recoverAndRestartTopupRecovery(admin, executionId, request.reason(), key));
+    }
+
+    /**
      * 계약 PDF 생성 재시도. 주문·버전(생략하면 현재 계약)을 기존 PDF 운영 조회로 계약 ID로 바꾼 뒤 실행한다.
      * 그 사이 계약이 바뀌면 실행 단계의 재검사가 거절하므로 이 조회 결과를 실행 허가로 쓰지 않는다.
      */

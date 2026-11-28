@@ -34,6 +34,7 @@ import com.example.lancerpick.wallet.service.WalletTopupService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -59,7 +60,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.job.parameters.JobParametersBuilder;
-import org.springframework.batch.core.launch.JobOperator;
 import org.springframework.batch.core.launch.JobRestartException;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.infrastructure.item.ExecutionContext;
@@ -95,7 +95,6 @@ class TopupRecoveryIntegrationTests {
   @Autowired TopupRecoveryTransactions recovery;
   @Autowired TopupRecoveryJobService jobs;
   @Autowired JobRepository jobRepository;
-  @Autowired JobOperator jobOperator;
   @Autowired TopupRecoveryService recoveryService;
   @Autowired TopupRecoveryProperties recoveryProperties;
   @Autowired PlatformTransactionManager transactionManager;
@@ -625,7 +624,29 @@ class TopupRecoveryIntegrationTests {
     // 실행 중으로 기록된 실행은 바로 재시작할 수 없다. 운영자가 중단된 실행임을 확인해 recover로 FAILED 처리해야 한다.
     assertThatThrownBy(() -> jobs.restart(crashed.getId())).isInstanceOf(JobRestartException.class);
     verify(gateway, never()).lookup(second.paymentKey());
-    var recovered = jobOperator.recover(jobRepository.getJobExecution(crashed.getId()));
+    // 방금 갱신된 실행은 살아 있을 수 있으므로 정리하지 않는다.
+    assertThatThrownBy(() -> jobs.recoverInterrupted(crashed.getId(), jobs.snapshot(crashed.getId())))
+        .isInstanceOf(JobRestartException.class);
+    assertThat(jobRepository.getJobExecution(crashed.getId()).getStatus())
+        .isEqualTo(BatchStatus.STARTED);
+    // 갱신이 기준 시간(기본 30분)보다 오래 멈춘 상태로 옮긴다. Batch와 같이 Timestamp(순간)로 저장해 JVM 시간대와 무관하게 한다.
+    var silentSince = java.sql.Timestamp.from(Instant.now().minus(Duration.ofHours(1)));
+    jdbc.update(
+        "UPDATE BATCH_JOB_EXECUTION SET CREATE_TIME=?,START_TIME=?,LAST_UPDATED=? WHERE"
+            + " JOB_EXECUTION_ID=?",
+        silentSince,
+        silentSince,
+        silentSince,
+        crashed.getId());
+    jdbc.update(
+        "UPDATE BATCH_STEP_EXECUTION SET CREATE_TIME=?,START_TIME=?,LAST_UPDATED=? WHERE"
+            + " STEP_EXECUTION_ID=?",
+        silentSince,
+        silentSince,
+        silentSince,
+        step.getId());
+    // 운영 경로(관리자 정리 명령)가 쓰는 서비스 메서드로 JobOperator.recover를 호출한다.
+    var recovered = jobs.recoverInterrupted(crashed.getId(), jobs.snapshot(crashed.getId()));
     assertThat(recovered.getStatus()).isEqualTo(BatchStatus.FAILED);
 
     var restarted = jobs.restart(crashed.getId());

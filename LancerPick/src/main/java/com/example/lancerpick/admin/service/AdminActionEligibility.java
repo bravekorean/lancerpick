@@ -37,6 +37,11 @@ public class AdminActionEligibility {
         require(decision.eligible());
         return null;
       }
+      case TOPUP_RECOVERY_RECOVER_RESTART -> {
+        var decision = finance.recoveryJob(adminId, targetId).recoverRestart();
+        require(decision.eligible());
+        return null;
+      }
       case CONTRACT_PDF_REGENERATE -> {
         var contract =
             contracts

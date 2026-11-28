@@ -10,7 +10,9 @@ import com.example.lancerpick.admin.repository.AdminFinanceQueries.TopupRow;
 import com.example.lancerpick.admin.service.AdminAuthorization;
 import com.example.lancerpick.admin.service.AdminFinanceQueryService;
 import com.example.lancerpick.admin.service.AdminRecoveryJobQueries;
+import com.example.lancerpick.wallet.batch.TopupRecoveryLocalExecutions;
 import com.example.lancerpick.wallet.config.TopupRecoveryProperties;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import com.example.lancerpick.wallet.entity.WalletTopupStatus;
 import com.example.lancerpick.wallet.gateway.TossPaymentGateway;
 import java.time.Clock;
@@ -41,12 +43,17 @@ class AdminFinanceQueryServiceTests {
                     null,
                     null,
                     true)));
+    var properties = new TopupRecoveryProperties(120, 180, 8, 60, 1800);
     var service =
         new AdminFinanceQueryService(
             queries,
             mock(AdminAuthorization.class),
-            new AdminRecoveryJobQueries(mock(JobRepository.class), false),
-            new TopupRecoveryProperties(120, 180, 8, 60),
+            new AdminRecoveryJobQueries(
+                mock(JobRepository.class),
+                false,
+                properties,
+                new StaticListableBeanFactory().getBeanProvider(TopupRecoveryLocalExecutions.class)),
+            properties,
             mock(TossPaymentGateway.class),
             Clock.fixed(now, ZoneOffset.UTC),
             false);

@@ -39,10 +39,12 @@ test('commands are single CSRF POSTs with only reason/requestKey (and version fo
   }
   await executeReprocess({ action: 'TOPUP_RECHECK', target: '9', reason: '확인', requestKey: KEY })
   await executeReprocess({ action: 'TOPUP_RECOVERY_RESTART', target: '31', version: 3, reason: '재시작', requestKey: KEY })
+  await executeReprocess({ action: 'TOPUP_RECOVERY_RECOVER_RESTART', target: '31', version: 3, reason: '중단 확인', requestKey: KEY })
   await executeReprocess({ action: 'CONTRACT_PDF_REGENERATE', target: '9007199254740993', version: 2, reason: '재생성', requestKey: KEY })
   assert.deepEqual(sent, [
     ['/api/admin/finance/topups/9/recheck', 'POST', 'csrf', JSON.stringify({ reason: '확인', requestKey: KEY })],
     ['/api/admin/finance/recovery-jobs/31/restart', 'POST', 'csrf', JSON.stringify({ reason: '재시작', requestKey: KEY })],
+    ['/api/admin/finance/recovery-jobs/31/recover-restart', 'POST', 'csrf', JSON.stringify({ reason: '중단 확인', requestKey: KEY })],
     ['/api/admin/orders/9007199254740993/contract-pdf/regenerate', 'POST', 'csrf',
       JSON.stringify({ reason: '재생성', requestKey: KEY, version: 2 })],
   ])
@@ -138,6 +140,8 @@ test('nothing is sent while sending or after the account changed', async () => {
 
 test('result labels never turn an accepted restart or unknown result into success', () => {
   assert.match(resultLabel({ status: 'SUCCEEDED', resultCode: 'BATCH_RESTART_ACCEPTED' }), /끝났다는 뜻은 아니/)
+  assert.match(resultLabel({ status: 'SUCCEEDED', resultCode: 'BATCH_RECOVER_RESTART_ACCEPTED' }), /끝났다는 뜻은 아니/)
+  assert.match(resultLabel({ status: 'FAILED', resultCode: 'BATCH_RECOVERED_RESTART_REJECTED' }), /일반 재시작/)
   assert.match(resultLabel({ status: 'SUCCEEDED', resultCode: 'TOPUP_RESOLVED_FAILED' }), /충전되지 않았어요/)
   assert.match(resultLabel({ status: 'UNKNOWN', resultCode: 'LEASE_EXPIRED' }), /직접 확인/)
   assert.match(resultLabel({ status: 'REQUESTED', resultCode: null }), /아직 결과를 기록하지 않았어요/)

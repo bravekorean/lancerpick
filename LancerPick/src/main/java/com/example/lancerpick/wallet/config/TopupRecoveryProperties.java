@@ -13,7 +13,21 @@ public record TopupRecoveryProperties(
     @DefaultValue("120") @Min(120) @Max(86400) long staleSeconds,
     @DefaultValue("180") @Min(120) @Max(3600) long leaseSeconds,
     @DefaultValue("8") @Min(1) @Max(100) int maxAttempts,
-    @DefaultValue("60") @Min(60) @Max(3600) long retrySeconds) {
+    @DefaultValue("60") @Min(60) @Max(3600) long retrySeconds,
+    @DefaultValue("1800") @Min(600) @Max(86400) long interruptedAfterSeconds) {
+  public TopupRecoveryProperties {
+    // 한 건 처리(처리권 보유) 시간보다 충분히 길어야 살아 있는 실행을 중단으로 오판하지 않는다.
+    if (interruptedAfterSeconds < Math.multiplyExact(leaseSeconds, 2)) {
+      throw new IllegalArgumentException(
+          "interrupted-after-seconds must be at least twice lease-seconds");
+    }
+  }
+
+  /** 실행 중 상태의 Batch 실행이 이 시간 동안 갱신되지 않으면 프로세스 종료로 남은 실행 후보로 본다. */
+  public Duration interruptedAfter() {
+    return Duration.ofSeconds(interruptedAfterSeconds);
+  }
+
   public Duration staleAge() {
     return Duration.ofSeconds(staleSeconds);
   }
