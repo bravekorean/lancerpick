@@ -1,5 +1,5 @@
 import { skipToken, useQuery, type QueryClient } from '@tanstack/react-query'
-import { apiRequest } from '../../shared/api/client.ts'
+import { ApiError, apiRequest } from '../../shared/api/client.ts'
 import type { PageResponse } from '../../shared/api/types.ts'
 import { captureAccountScope, isUnclearResult } from '../auth/session.ts'
 import { isValidProductId as isValidId } from './validation.ts'
@@ -83,7 +83,9 @@ export function clearReprocessResult(client: QueryClient, action: ReprocessActio
  * 새 요청(input) 또는 결과가 불명확했던 이전 요청(같은 키·같은 본문)을 보낸다.
  * - 처리 중에는 다시 보내지 않는다. 자동 재시도도 하지 않는다.
  * - 통신 오류·5xx: 서버가 기록했을 수 있으므로 요청을 남겨 두고 "같은 요청으로 결과 확인"만 허용한다.
- * - 명확한 거절(4xx): 첫 요청이면 기록이 없으므로 지운다. 이미 불명확했던 요청의 재전송이 거절되면 첫 요청 결과를 알 수 없어 그대로 둔다.
+ * - 잠금 대기 초과(409 RESOURCE_BUSY): 서버는 업무를 실행한 뒤 결과를 별도 트랜잭션으로 저장하므로, 결과 저장 단계의 잠금 실패면
+ *   업무가 이미 반영됐을 수 있다. 통신 오류처럼 요청을 남겨 두고 같은 키로 결과를 확인하게 한다.
+ * - 그 밖의 명확한 거절(4xx): 첫 요청이면 기록이 없으므로 지운다. 이미 불명확했던 요청의 재전송이 거절되면 첫 요청 결과를 알 수 없어 그대로 둔다.
  * - 응답이 와도 계정이 바뀌었으면 아무것도 바꾸지 않는다.
  */
 export async function submitReprocess(
@@ -108,7 +110,7 @@ export async function submitReprocess(
     return receipt
   } catch (error) {
     if (isCurrentAccount() && mine())
-      client.setQueryData(key, isUnclearResult(error) || retrying ? { ...pending, phase: 'uncertain' } : null)
+      client.setQueryData(key, isUnclearResult(error) || isResourceBusy(error) || retrying ? { ...pending, phase: 'uncertain' } : null)
     throw error
   } finally {
     // 결과와 상관없이 대상의 최신 상태·이력을 다시 읽는다.
@@ -120,6 +122,9 @@ export async function submitReprocess(
     }
   }
 }
+
+/** 잠금 대기 초과·교착. 앞 단계가 커밋됐을 수 있어 "확정 거절"로 보지 않는다. */
+const isResourceBusy = (error: unknown) => error instanceof ApiError && error.code === 'RESOURCE_BUSY'
 
 export const ACTION_LABELS: Record<ReprocessAction, string> = {
   TOPUP_RECHECK: '충전 재확인', TOPUP_RECOVERY_RESTART: '충전 복구 작업 재시작', CONTRACT_PDF_REGENERATE: '계약 PDF 다시 만들기',
