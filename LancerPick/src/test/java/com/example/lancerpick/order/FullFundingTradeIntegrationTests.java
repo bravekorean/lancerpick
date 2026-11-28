@@ -391,6 +391,30 @@ class FullFundingTradeIntegrationTests {
   }
 
   @Test
+  void paymentRetryAfterRolledBackFailureDebitsExactlyOnce() {
+    failPublishing();
+    assertThatThrownBy(() -> payments.pay(buyer, str(), true))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(balance(buyer)).isEqualTo(1000000);
+    // 장애가 사라진 뒤 같은 요청을 다시 보내면 새로 한 번만 결제되고, 그다음 재전송은 기존 결제를 돌려준다.
+    reset(
+        org.springframework.test.util.AopTestUtils.<OrderEventPublisher>getUltimateTargetObject(
+            events));
+    payments.pay(buyer, str(), true);
+    payments.pay(buyer, str(), true);
+    assertThat(balance(buyer)).isEqualTo(1000000 - AMOUNT);
+    assertThat(count("payments")).isEqualTo(1);
+    assertThat(count("order_funds")).isEqualTo(1);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM wallet_entries WHERE member_id=? AND type='PAYMENT'",
+                Long.class,
+                buyer))
+        .isEqualTo(1);
+    assertThat(funding.summary(buyer, id).status()).isEqualTo("HELD");
+  }
+
+  @Test
   void refundFailureRollsBackRequestApprovalWalletAndClosure() {
     payments.pay(buyer, str(), true);
     requests.create(

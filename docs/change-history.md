@@ -10,6 +10,29 @@
 
 린트·타입 검사 포함 빌드·test:api 349건 통과. Edge API 대역 320/390/720px 및 데스크톱 전환에서 검색 열기/닫기/포커스/URL/입력 유지와 일반·판매자·관리자·비로그인·프로필 미등록 메뉴를 확인했다. 기존 메시지/알림 헤더 접근·로그아웃·대화 입력 보존도 회귀 확인했다. 실제 모바일 기기·서버 검증과 구분한다. 더미 SQL·개인 자료는 보존하며 push·PR은 진행하지 않았다.
 
+<a id="wallet-lock-crash-recovery-check"></a>
+### 지갑 잠금 대기·실패 후 재시도·충전 복구 중단 실행 검증 — 2026-11-28
+
+황준범, 기준 main `782508f`(후보 `7324f96` 이후 `4a3932d` 결제 쿼리 정리 포함). 환경: Linux 컨테이너, Temurin JDK 25.0.5.1+2, Docker MySQL 8.4(CI와 같은 `lancerpick_ci` 격리 DB), 토스는 테스트 대역. 포트폴리오 사례 표에 "후속 검증"으로 남아 있던 항목을 통합 테스트로 확인했다.
+
+**사전 확인(CI 동등 실행).** `782508f`에서 `./gradlew clean build`(백엔드 1,153건, 측정용 2건 skip, 실패 0)와 프런트 `typecheck`·`lint`·`test:api`·`build`가 통과했다. 원격 Actions 결과는 이번에 조회하지 못했으므로 원격 CI 통과로 적지 않는다. `4a3932d`는 후보 `7324f96` 이후 main에 들어온 코드 변경이라, 발표 후보는 다시 정하고 결제·주문 상세 영향 화면을 실서버에서 확인해야 한다([발표 후보 확인](#presentation-candidate-check)과 같은 절차).
+
+| 검증 | 조건 | 결과 | 근거 |
+| --- | --- | --- | --- |
+| 대기 한도 안 잠금 해제 | 다른 트랜잭션이 구매자 지갑 행을 `FOR UPDATE`로 1초 보유 | 결제가 기다렸다가(약 1.0~1.3초) 같은 트랜잭션에서 차감·보관금·원장·상태 전환을 끝냄. 결제 1건 | `WalletLockContentionIntegrationTests.paymentWaitsForWalletLockReleasedWithinLimitAndThenPaysOnce` |
+| 대기 한도 초과 | 테스트 커넥션만 `innodb_lock_wait_timeout=2`, 지갑 잠금을 한도보다 오래 보유 | 약 2초 뒤 `PessimisticLockingFailureException`. 주문 AWAITING_PAYMENT 유지, 잔액·결제·보관금·PAYMENT 원장·결제 이벤트 모두 없음 | `walletLockTimeoutRollsBackWholePaymentAndRetryPaysOnce` |
+| 실패 후 재시도 | 잠금 해제 뒤 같은 요청 2회 / 아웃박스 실패 롤백 뒤 같은 요청 2회 | 두 경우 모두 결제 1건·PAYMENT 원장 1건·잔액 1회 차감, 두 번째 요청은 기존 결제 반환 | `walletLockTimeoutRollsBackWholePaymentAndRetryPaysOnce`, `FullFundingTradeIntegrationTests.paymentRetryAfterRolledBackFailureDebitsExactlyOnce` |
+| 독립 지갑 | 구매자 A 지갑 잠금 중 A 결제 대기, 같은 판매자의 다른 구매자 B 결제 | B는 1초 안에 완료(관측 약 0.3초), A는 잠금 해제 뒤 완료. 결제 단계는 판매자 지갑을 바꾸지 않음 | `lockedWalletDoesNotDelayPaymentFromIndependentWallet` |
+| HTTP 응답 | 대기 한도 초과를 `POST /api/orders/{id}/payment`로 재현 | **500 `INTERNAL_ERROR`**. 금액은 바뀌지 않지만 사용자는 재시도해도 되는지 알 수 없다 | `walletLockTimeoutOverHttpIsCurrentlyAnUnclassifiedServerError`(현재 동작을 고정한 테스트) |
+| 충전 복구 중 프로세스 종료 | 첫 건 지급 커밋 뒤 체크포인트(`lastId`) 저장 전에 종료된 상태를 Batch 메타데이터로 재현(실행·단계 STARTED) | 그대로 재시작하면 `JobRestartException`. `JobOperator.recover`로 FAILED 처리한 뒤 재시작하면 같은 JobInstance로 완료, 첫 건 추가 조회·지급 0, 둘째 건 1회 지급 | `TopupRecoveryIntegrationTests.executionLeftStartedByProcessCrashNeedsRecoverAndThenRestartsWithoutDoublePayout` |
+
+새 테스트 6건은 위 환경에서 통과했고, 시간 조건이 있는 지갑 잠금 4건은 3회 반복 실행에서도 모두 통과했다.
+
+**확인된 한계와 후속 후보(미구현).**
+- 운영 DB의 잠금 대기 한도는 MySQL 기본값(50초)이다. 지갑 잠금이 오래 잡히면 결제 요청이 최대 50초 기다린 뒤 500으로 끝난다. 후보: 결제 경로의 잠금 대기 한도를 짧게 두고, `PessimisticLockingFailureException`을 재시도 가능한 409/503 코드로 응답.
+- 프로세스가 죽어 STARTED로 남은 복구 실행은 관리자 Batch 재시작으로 되살릴 수 없다(기존 `runningJobIsNotForcedIntoRestartOrFailedState`가 의도한 동작). 중단 여부를 운영자가 확인한 뒤 `recover`를 실행하는 경로는 현재 코드에 없다. 이 시나리오의 금액 안전성은 충전 상태 확인이 보장하고, 남은 미처리 건은 새 복구 실행이나 사용자 재확인으로도 처리된다.
+- 프로세스 강제 종료는 메타데이터 상태로 재현했다. 실제 JVM 종료·DB 연결 끊김은 실행하지 않았다.
+
 <a id="presentation-candidate-check"></a>
 ### 발표 후보 확정·최종 확인 — 2026-11-12
 
@@ -10537,6 +10560,7 @@ Flyway V1~V11이 main에 있다. 계약 초안·서명·PDF, 결제 금액 보�
 | 신규 결제 SQL | 중복 잠금 조회와 상세 조회를 정리해 요청당 32회에서 27회로 15.6% 줄였다. 결제 재요청은 기존 결제 기록을 재사용해 SQL을 한 번 더 줄였다. | [기록 재사용](#payment-record-reuse) · [상세 조회 개선](#payment-order-detail-latency) |
 | 결제 서비스 지연 | 같은 지갑에 작업자 8개를 둔 로컬 역순 재측정에서 p95는 167.68ms → 157.22ms, 상세 조회 시간은 6.36ms → 4.12ms였다. 상세 조회 개선 전후 1,248요청에서 금액 검증 실패와 예상 밖 오류는 0건이었고 회귀 테스트 162개가 통과했다. | [측정 조건과 원본](#payment-order-detail-latency) |
 | 미확정 충전 복구 | 격리 MySQL과 토스 테스트 대역으로 960건의 정상 복구를 확인했다. 복구 직후 배치를 다시 시작한 18회 모두 추가 승인 조회와 중복 지급이 0건이었다. 100건 배치의 실행시간 중앙값은 대역 지연 0ms에서 2.75초, 건당 50ms에서 7.92초였다. | [복구 기준 측정과 원본](#topup-recovery-benchmark) |
+| 잠금 대기·재시도·중단 실행(2026-11-28 추가) | 지갑 잠금 대기 한도 안에서는 결제가 이어지고, 한도 초과 시 전체 롤백 뒤 재시도로 한 번만 차감된다. 다른 지갑의 결제는 막히지 않는다. STARTED로 남은 복구 실행은 recover 뒤 재시작해 중복 지급 없이 완료했다. 한도 초과의 HTTP 응답은 500이다. | [잠금·중단 실행 검증](#wallet-lock-crash-recovery-check) |
 
 결제 지연은 로컬 서비스 호출에서 측정했으며 HTTP·브라우저 시간은 제외했다. 충전 복구 시간은 이미 복구 대상이 된 건의 배치 실행시간이며, 사용자 단건 재확인이나 자동 복구가 시작될 때까지의 대기시간은 별도다.
 
