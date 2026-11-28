@@ -6,7 +6,7 @@ Java 25 / Spring Boot 4.1.2 기반 백엔드입니다. 회원/인증·상품·�
 
 아래 도식은 MVP 기본 계층 예시입니다. 현재 추가된 contract·chat·notification·inquiry·Batch 연결은 [전체 구조](../docs/architecture.md#conventions)와 [도메인 명세](../docs/features.md)를 함께 확인합니다.
 
-현재 마이그레이션은 V1~V11(업무 32개·Batch 시스템 9개, Flyway 이력 제외)입니다. 일반 실행은 연결 DB에 적용하므로 대상을 확인합니다. 토스 [충전 신청·승인·본인 재확인](../docs/features.md#finance-topup)은 검증된 외부 DONE에서만 1회 지급합니다. 일반 개발 TOSS_TOPUP_ENABLED 기본값은 true, test는 false이며 실제 키는 제외된 개인 설정 또는 환경변수로 관리합니다. V3 신규 주문 기본 활성·V2 비활성·메일/충전 복구 자동 실행 기본값과 과거 검증 결과는 [구조](../docs/architecture.md)·[진행 현황](../docs/project-progress.md)에서 구분합니다.
+현재 마이그레이션은 V1~V13(업무 33개·Batch 시스템 9개, Flyway 이력 제외)입니다. 테이블별 설명은 [DB 설계](../docs/database-design.md)를 따릅니다. 일반 실행은 연결 DB에 적용하므로 대상을 확인합니다. 토스 [충전 신청·승인·본인 재확인](../docs/features.md#finance-topup)은 검증된 외부 DONE에서만 1회 지급합니다. 일반 개발 TOSS_TOPUP_ENABLED 기본값은 true, test는 false이며 실제 키는 제외된 개인 설정 또는 환경변수로 관리합니다. V3 신규 주문 기본 활성·V2 비활성·메일/충전 복구 자동 실행 기본값과 과거 검증 결과는 [구조](../docs/architecture.md)·[진행 현황](../docs/project-progress.md)에서 구분합니다.
 
 기본 패키지는 `com.example.lancerpick`입니다.
 

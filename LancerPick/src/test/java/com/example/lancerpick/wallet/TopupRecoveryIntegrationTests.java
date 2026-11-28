@@ -23,7 +23,9 @@ import com.example.lancerpick.wallet.gateway.TossPaymentGateway.Payment;
 import com.example.lancerpick.wallet.repository.TopupRecoveryQueries;
 import com.example.lancerpick.wallet.repository.WalletEntryRepository;
 import com.example.lancerpick.wallet.service.TopupApprovalTransactions;
+import com.example.lancerpick.wallet.config.TopupRecoveryProperties;
 import com.example.lancerpick.wallet.service.TopupRecoveryJobService;
+import com.example.lancerpick.wallet.service.TopupRecoveryService;
 import com.example.lancerpick.wallet.service.TopupRecoveryTransactions;
 import com.example.lancerpick.wallet.service.TopupRecoveryTransactions.Result;
 import com.example.lancerpick.wallet.service.WalletInitializationService;
@@ -57,6 +59,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.job.parameters.JobParametersBuilder;
+import org.springframework.batch.core.launch.JobOperator;
 import org.springframework.batch.core.launch.JobRestartException;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.infrastructure.item.ExecutionContext;
@@ -92,6 +95,9 @@ class TopupRecoveryIntegrationTests {
   @Autowired TopupRecoveryTransactions recovery;
   @Autowired TopupRecoveryJobService jobs;
   @Autowired JobRepository jobRepository;
+  @Autowired JobOperator jobOperator;
+  @Autowired TopupRecoveryService recoveryService;
+  @Autowired TopupRecoveryProperties recoveryProperties;
   @Autowired PlatformTransactionManager transactionManager;
   @Autowired MutableClock clock;
   @MockitoBean TossPaymentGateway gateway;
@@ -578,6 +584,54 @@ class TopupRecoveryIntegrationTests {
     var restarted = jobs.restart(failed.getId());
     assertThat(restarted.getStatus()).isEqualTo(BatchStatus.COMPLETED);
     assertThat(restarted.getJobInstanceId()).isEqualTo(failed.getJobInstanceId());
+    assertCredited(first);
+    assertCredited(second);
+    verify(gateway, times(1)).lookup(first.paymentKey());
+    verify(gateway, times(1)).lookup(second.paymentKey());
+  }
+
+  @Test
+  void executionLeftStartedByProcessCrashNeedsRecoverAndThenRestartsWithoutDoublePayout()
+      throws Exception {
+    var first = pending();
+    var second = pending();
+    clock.advance(121);
+    when(gateway.lookup(first.paymentKey())).thenReturn(done(first));
+    when(gateway.lookup(second.paymentKey())).thenReturn(done(second));
+    long requestedAt = clock.millis();
+    // 프로세스가 첫 건 지급을 커밋한 직후 체크포인트(lastId)를 저장하기 전에 종료된 상태를 재현한다.
+    // 실행·단계는 STARTED로 남고, 단계 컨텍스트에는 처리 범위(highestId)만 있고 lastId는 없다.
+    var parameters =
+        new JobParametersBuilder()
+            .addString(TopupRecoveryJobParameters.RUN_ID, UUID.randomUUID().toString())
+            .addLong(TopupRecoveryJobParameters.REQUESTED_AT_MILLIS, requestedAt)
+            .toJobParameters();
+    var instance =
+        jobRepository.createJobInstance(TopupRecoveryBatchConfiguration.JOB_NAME, parameters);
+    var crashed = jobRepository.createJobExecution(instance, parameters, new ExecutionContext());
+    crashed.setStatus(BatchStatus.STARTED);
+    crashed.setStartTime(utc(clock.instant()));
+    jobRepository.update(crashed);
+    var step = jobRepository.createStepExecution("walletTopupRecoveryStep", crashed);
+    step.setStatus(BatchStatus.STARTED);
+    step.setStartTime(utc(clock.instant()));
+    step.getExecutionContext().putLong("highestId", second.id());
+    jobRepository.update(step);
+    jobRepository.updateExecutionContext(step);
+    var staleBefore = Instant.ofEpochMilli(requestedAt).minus(recoveryProperties.staleAge());
+    assertThat(recoveryService.recover(first.id(), staleBefore)).isEqualTo(Result.COMPLETED);
+    assertCredited(first);
+
+    // 실행 중으로 기록된 실행은 바로 재시작할 수 없다. 운영자가 중단된 실행임을 확인해 recover로 FAILED 처리해야 한다.
+    assertThatThrownBy(() -> jobs.restart(crashed.getId())).isInstanceOf(JobRestartException.class);
+    verify(gateway, never()).lookup(second.paymentKey());
+    var recovered = jobOperator.recover(jobRepository.getJobExecution(crashed.getId()));
+    assertThat(recovered.getStatus()).isEqualTo(BatchStatus.FAILED);
+
+    var restarted = jobs.restart(crashed.getId());
+    assertThat(restarted.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+    assertThat(restarted.getJobInstanceId()).isEqualTo(crashed.getJobInstanceId());
+    // 체크포인트가 첫 건 이전이어도 충전 상태 확인이 첫 건을 다시 지급하지 않는다.
     assertCredited(first);
     assertCredited(second);
     verify(gateway, times(1)).lookup(first.paymentKey());
