@@ -57,7 +57,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 지갑 행 잠금을 다른 트랜잭션이 오래 쥐고 있을 때의 결제 동작.
  *
- * <p>MySQL 기본 잠금 대기 한도는 50초라 테스트 커넥션만 2초로 줄인다(운영 설정은 바꾸지 않는다). 대기 한도 안에서 풀리면 결제가 이어서 성공하고,
+ * <p>애플리케이션 기본 잠금 대기 한도(5초, {@code DB_LOCK_WAIT_TIMEOUT_SECONDS})보다 빨리 끝나도록 이 테스트 커넥션만 2초로 줄인다.
+ * 기본값 5초는 {@code DatabaseLockWaitTimeoutTests}가 따로 확인한다. 대기 한도 안에서 풀리면 결제가 이어서 성공하고,
  * 한도를 넘으면 결제 전체가 롤백되며, 같은 요청을 다시 보내면 한 번만 차감되는지, 다른 지갑의 결제는 막히지 않는지 확인한다.
  */
 @IntegrationTest

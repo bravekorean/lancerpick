@@ -76,14 +76,17 @@ public class ApiExceptionHandler {
     }
 
     /**
-     * 행 잠금 대기 한도 초과·교착 상태. 예외가 트랜잭션 밖으로 나오면 명령 전체가 롤백됐으므로 "결과 불명"(5xx)이 아니라
-     * 반영되지 않은 충돌로 응답한다. 같은 요청을 다시 보내도 되며, 멱등 명령은 기존 결과를 돌려준다.
+     * 행 잠금 대기 한도 초과·교착 상태. 실패한 트랜잭션은 롤백된다. 요청 하나가 트랜잭션 하나인 명령(주문 결제 등)은
+     * 반영되지 않은 것이 확실하므로 "결과 불명"(5xx)이 아니라 재시도할 수 있는 충돌로 응답한다.
+     * 여러 짧은 트랜잭션을 잇는 명령(충전 승인·관리자 충전 재확인 등)은 앞 단계가 이미 커밋됐을 수 있으므로,
+     * 문구는 "반영되지 않음"이 아니라 "완료하지 못함"으로 두고 상태 재조회를 함께 안내한다.
+     * 같은 요청을 다시 보내도 되며, 멱등 명령은 기존 결과를 돌려준다.
      */
     @ExceptionHandler({PessimisticLockingFailureException.class, jakarta.persistence.LockTimeoutException.class,
             jakarta.persistence.PessimisticLockException.class})
     ResponseEntity<ApiError> resourceBusy(Exception exception, HttpServletRequest request) {
         log.warn("Lock wait failed traceId={} type={}", TraceIdFilter.traceId(request), exception.getClass().getName());
-        var body = new ApiError("RESOURCE_BUSY", "같은 대상을 다른 요청이 처리하고 있어 이번 요청은 반영되지 않았습니다. 잠시 후 다시 시도해 주세요.",
+        var body = new ApiError("RESOURCE_BUSY", "같은 대상을 다른 요청이 처리하고 있어 요청을 완료하지 못했습니다. 잠시 후 상태를 확인하고 다시 시도해 주세요.",
                 List.of(), TraceIdFilter.traceId(request));
         return ResponseEntity.status(HttpStatus.CONFLICT).header(HttpHeaders.RETRY_AFTER, "1").body(body);
     }

@@ -13,13 +13,15 @@
 <a id="lock-wait-resource-busy"></a>
 ### 잠금 대기 한도 단축과 409 RESOURCE_BUSY 응답 — 2026-11-28
 
-황준범, main `15cdd8b` 기준 브랜치 `fix/lock-wait-timeout-response`. [직전 검증](#wallet-lock-crash-recovery-check)에서 지갑 잠금 대기가 MySQL 기본 50초까지 이어진 뒤 HTTP 500 `INTERNAL_ERROR`로 끝나는 것을 확인해 고쳤다.
+황준범, main `15cdd8b` 기준 브랜치 `fix/lock-wait-timeout-response`. [직전 검증](#wallet-lock-crash-recovery-check)에서 테스트 커넥션의 대기 한도를 2초로 두고 지갑 잠금 대기 초과를 HTTP로 재현했을 때 500 `INTERNAL_ERROR`로 끝나는 것을 확인해 고쳤다. 앱에는 대기 한도 설정이 없었으므로 운영에서는 MySQL 기본값(50초)까지 기다릴 수 있었다. 50초 대기는 설정에서 추론한 값이며 측정하지 않았고, 실서버 MySQL의 설정값도 확인하지 않았다(**확인 필요**).
 
 - 변경: `spring.datasource.hikari.connection-init-sql=SET SESSION innodb_lock_wait_timeout=${DB_LOCK_WAIT_TIMEOUT_SECONDS:5}`. 결제뿐 아니라 애플리케이션의 모든 행 잠금 대기에 적용된다. 아웃박스 발송(`LOCK_UNAVAILABLE`)·인증 요청 제한(교착 재시도)은 기존처럼 잠금 실패를 처리한다.
-- 변경: `ApiExceptionHandler`가 `PessimisticLockingFailureException`·`LockTimeoutException`·`PessimisticLockException`을 409 `RESOURCE_BUSY`(`Retry-After: 1`)로 응답하고 WARN 로그에 traceId·예외 타입만 남긴다. 예외가 트랜잭션 밖으로 나왔으면 명령 전체가 롤백된 상태이므로, 프런트의 "결과 불명"(5xx) 안내 대신 서버 문구와 코드를 보여 준다.
-- 409를 고른 이유: 프런트 주문 명령 실패 안내는 5xx를 "이미 처리됐을 수 있음"으로 다룬다. 잠금 실패는 반영되지 않은 것이 확실하므로 재시도를 권할 수 있는 4xx 충돌이 맞다.
-- 검증: `WalletLockContentionIntegrationTests.walletLockTimeoutOverHttpIsRetryableConflictAndRetrySucceeds`(409·`Retry-After`·금액 불변, 재요청 200·한 번 차감), `DatabaseLockWaitTimeoutTests`(풀 커넥션의 세션 값 5초). Docker MySQL 8.4·JDK 25 전체 백엔드 빌드 결과는 PR에 기록한다.
-- 한계: 5초보다 오래 걸리는 정상 잠금 보유가 있으면 그 경쟁 요청은 409가 된다. 현재 외부 통신(토스·PDF·메일)은 잠금 트랜잭션 밖에서 실행된다. 프로세스 종료로 STARTED에 남은 충전 복구 실행을 `recover`하는 관리자 경로는 이번에도 추가하지 않았다.
+- 변경: `ApiExceptionHandler`가 `PessimisticLockingFailureException`·`LockTimeoutException`·`PessimisticLockException`을 409 `RESOURCE_BUSY`(`Retry-After: 1`)로 응답하고 WARN 로그에 traceId·예외 타입만 남긴다. 잠금 실패가 난 트랜잭션은 롤백되므로, 프런트의 "결과 불명"(5xx) 안내 대신 서버 문구와 코드를 보여 준다.
+- 409를 고른 이유: 프런트 주문 명령 실패 안내는 5xx를 "이미 처리됐을 수 있음"으로 다룬다. 주문 결제처럼 요청 하나가 트랜잭션 하나인 명령은 잠금 실패 시 반영되지 않은 것이 확실하므로 재시도를 권할 수 있는 4xx 충돌이 맞다.
+- 롤백 범위(리뷰 후 정정): 충전 승인(`WalletTopupApprovalService.confirm`)·관리자 충전 재확인(`AdminTopupRecheckService.recheck`)은 짧은 트랜잭션 여러 개를 잇는다. 뒤 단계(예: 토스 승인 뒤 `unknown` 기록)에서 잠금 대기가 초과되면 앞 단계(PROCESSING 전환·재확인 선점)는 이미 커밋돼 있고 토스 승인도 끝났을 수 있다. 이때도 409가 나가므로 응답 문구를 "반영되지 않았습니다"에서 "요청을 완료하지 못했습니다. 잠시 후 상태를 확인하고 다시 시도해 주세요"로 바꿨다. 같은 요청을 다시 보내면 PROCESSING·UNKNOWN 충전은 승인을 다시 실행하지 않고 현재 상태를 돌려주며, 미확정 건은 결과 재확인·복구 배치가 처리한다(코드 경로 확인, 이 경로의 잠금 실패 자체는 테스트로 재현하지 않음).
+- 검증: `WalletLockContentionIntegrationTests.walletLockTimeoutOverHttpIsRetryableConflictAndRetrySucceeds`(409·`Retry-After`·금액 불변, 재요청 200·한 번 차감), `DatabaseLockWaitTimeoutTests`(풀 커넥션의 세션 값 5초). 409 테스트는 같은 클래스의 테스트 커넥션 대기 한도 2초에서 실행된다. 기본값 5초는 세션 값으로만 확인했고, 5초 대기 뒤 409가 나는 것을 따로 재현하지는 않았다. 로컬 Docker MySQL 8.4·JDK 25 `./gradlew clean build` 1,160건 통과(측정용 2건 skip, PR #3 기록), 원격 CI는 `60d4d9e` push 실행 성공.
+- 관리자 재처리(리뷰 후 보완, PR #5): `AdminReprocessingService.execute`는 업무 실행 뒤 별도 트랜잭션에서 `audit.complete`로 결과를 저장한다(L108). 이 단계가 잠금 대기에 실패하면 업무가 반영됐어도 409 `RESOURCE_BUSY`가 나갈 수 있는데, 관리자 화면은 첫 요청의 4xx를 확정 거절로 보고 요청 키를 지웠다. 다시 제출하면 같은 키로 결과를 확인하는 대신 새 요청이 들어갈 수 있었다. `reprocessApi.submitReprocess`가 `RESOURCE_BUSY`를 결과 불명으로 다뤄 키·본문을 보존하도록 고쳤다. 검증: `tests/admin-reprocess.test.mjs`의 RESOURCE_BUSY 테스트(수정 전 실패·수정 후 통과), 프런트 `test:api` 355건·`typecheck`·`lint`·`build` 통과. 서버의 `audit.complete` 잠금 실패 자체는 재현하지 않았고, 브라우저 확인은 하지 않았다(**확인 필요**).
+- 한계: 5초보다 오래 걸리는 정상 잠금 보유가 있으면 그 경쟁 요청은 409가 된다. 현재 외부 통신(토스·PDF·메일)은 잠금 트랜잭션 밖에서 실행된다. 프로세스 종료로 STARTED에 남은 충전 복구 실행을 `recover`하는 관리자 경로는 이번에도 추가하지 않았다. 프런트는 `RESOURCE_BUSY`를 따로 다루지 않고 주문 상세에서 서버 문구와 코드를 그대로 보여 주며 `Retry-After`는 쓰지 않는다. 브라우저·실서버에서 이 안내를 확인하지 않았다(**확인 필요**).
 
 
 <a id="wallet-lock-crash-recovery-check"></a>
@@ -41,7 +43,7 @@
 새 테스트 6건은 위 환경에서 통과했고, 시간 조건이 있는 지갑 잠금 4건은 3회 반복 실행에서도 모두 통과했다.
 
 **확인된 한계와 후속 후보(미구현).**
-- 운영 DB의 잠금 대기 한도는 MySQL 기본값(50초)이다. 지갑 잠금이 오래 잡히면 결제 요청이 최대 50초 기다린 뒤 500으로 끝난다. 후보: 결제 경로의 잠금 대기 한도를 짧게 두고, `PessimisticLockingFailureException`을 재시도 가능한 409/503 코드로 응답.
+- (같은 날 해결) 앱에 잠금 대기 한도 설정이 없어 운영 DB에서는 MySQL 기본값(50초, 설정에서 추론)까지 기다린 뒤 500으로 끝날 수 있었다. 대기 한도 5초와 409 `RESOURCE_BUSY` 응답으로 고쳤다([수정](#lock-wait-resource-busy)).
 - 프로세스가 죽어 STARTED로 남은 복구 실행은 관리자 Batch 재시작으로 되살릴 수 없다(기존 `runningJobIsNotForcedIntoRestartOrFailedState`가 의도한 동작). 중단 여부를 운영자가 확인한 뒤 `recover`를 실행하는 경로는 현재 코드에 없다. 이 시나리오의 금액 안전성은 충전 상태 확인이 보장하고, 남은 미처리 건은 새 복구 실행이나 사용자 재확인으로도 처리된다.
 - 프로세스 강제 종료는 메타데이터 상태로 재현했다. 실제 JVM 종료·DB 연결 끊김은 실행하지 않았다.
 
@@ -10572,7 +10574,7 @@ Flyway V1~V11이 main에 있다. 계약 초안·서명·PDF, 결제 금액 보�
 | 신규 결제 SQL | 중복 잠금 조회와 상세 조회를 정리해 요청당 32회에서 27회로 15.6% 줄였다. 결제 재요청은 기존 결제 기록을 재사용해 SQL을 한 번 더 줄였다. | [기록 재사용](#payment-record-reuse) · [상세 조회 개선](#payment-order-detail-latency) |
 | 결제 서비스 지연 | 같은 지갑에 작업자 8개를 둔 로컬 역순 재측정에서 p95는 167.68ms → 157.22ms, 상세 조회 시간은 6.36ms → 4.12ms였다. 상세 조회 개선 전후 1,248요청에서 금액 검증 실패와 예상 밖 오류는 0건이었고 회귀 테스트 162개가 통과했다. | [측정 조건과 원본](#payment-order-detail-latency) |
 | 미확정 충전 복구 | 격리 MySQL과 토스 테스트 대역으로 960건의 정상 복구를 확인했다. 복구 직후 배치를 다시 시작한 18회 모두 추가 승인 조회와 중복 지급이 0건이었다. 100건 배치의 실행시간 중앙값은 대역 지연 0ms에서 2.75초, 건당 50ms에서 7.92초였다. | [복구 기준 측정과 원본](#topup-recovery-benchmark) |
-| 잠금 대기·재시도·중단 실행(2026-11-28 추가) | 지갑 잠금 대기 한도 안에서는 결제가 이어지고, 한도 초과 시 전체 롤백 뒤 재시도로 한 번만 차감된다. 다른 지갑의 결제는 막히지 않는다. STARTED로 남은 복구 실행은 recover 뒤 재시작해 중복 지급 없이 완료했다. 한도 초과 응답은 500에서 409 `RESOURCE_BUSY`(대기 한도 5초)로 바꿨다. | [잠금·중단 실행 검증](#wallet-lock-crash-recovery-check) · [409 수정](#lock-wait-resource-busy) | [잠금·중단 실행 검증](#wallet-lock-crash-recovery-check) |
+| 잠금 대기·재시도·중단 실행(2026-11-28 추가) | 지갑 잠금 대기 한도 안에서는 결제가 이어지고, 한도 초과 시 전체 롤백 뒤 재시도로 한 번만 차감된다. 다른 지갑의 결제는 막히지 않는다. STARTED로 남은 복구 실행은 recover 뒤 재시작해 중복 지급 없이 완료했다. 한도 초과 응답은 500에서 409 `RESOURCE_BUSY`로 바꿨다(기본 대기 한도 5초, 409는 테스트 한도 2초에서 확인). | [잠금·중단 실행 검증](#wallet-lock-crash-recovery-check) · [409 수정](#lock-wait-resource-busy) |
 
 결제 지연은 로컬 서비스 호출에서 측정했으며 HTTP·브라우저 시간은 제외했다. 충전 복구 시간은 이미 복구 대상이 된 건의 배치 실행시간이며, 사용자 단건 재확인이나 자동 복구가 시작될 때까지의 대기시간은 별도다.
 

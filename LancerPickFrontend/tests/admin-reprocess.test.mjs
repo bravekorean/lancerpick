@@ -102,6 +102,28 @@ test('a clear first rejection forgets the request; a rejected retry stays uncert
   client.clear()
 })
 
+test('RESOURCE_BUSY keeps the request because the work may already be applied; the retry reuses the same key', async () => {
+  const client = newClient()
+  const bodies = []
+  let busy = true
+  globalThis.fetch = async (url, options) => {
+    const token = csrf(url); if (token) return token
+    bodies.push(options.body)
+    if (busy) return json({ code: 'RESOURCE_BUSY', message: '같은 대상을 다른 요청이 처리하고 있어 요청을 완료하지 못했습니다.', fieldErrors: [], traceId: 't' }, 409)
+    return json(receipt(), 200)
+  }
+  const command = { action: 'TOPUP_RECHECK', target: '9', reason: '확인', requestKey: KEY }
+  await assert.rejects(submitReprocess(client, 'TOPUP_RECHECK', '9', command, () => true), /완료하지 못했습니다/)
+  // 감사 결과 저장(audit.complete)의 잠금 실패일 수 있으므로 확정 거절처럼 지우지 않는다.
+  assert.equal(client.getQueryData(pendingReprocessKey('TOPUP_RECHECK', '9')).phase, 'uncertain')
+  busy = false
+  await submitReprocess(client, 'TOPUP_RECHECK', '9', { ...command, requestKey: crypto.randomUUID() }, () => true)
+  assert.equal(bodies.length, 2)
+  assert.equal(bodies[1], bodies[0])
+  assert.equal(client.getQueryData(pendingReprocessKey('TOPUP_RECHECK', '9')).phase, 'done')
+  client.clear()
+})
+
 test('nothing is sent while sending or after the account changed', async () => {
   const client = newClient()
   let calls = 0
