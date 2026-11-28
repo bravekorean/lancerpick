@@ -25,9 +25,9 @@
 <a id="wallet-lock-crash-recovery-check"></a>
 ### 지갑 잠금 대기·실패 후 재시도·충전 복구 중단 실행 검증 — 2026-11-28
 
-황준범, 기준 main `782508f`(후보 `7324f96` 이후 `4a3932d` 결제 쿼리 정리 포함). 환경: Linux 컨테이너, Temurin JDK 25.0.5.1+2, Docker MySQL 8.4(CI와 같은 `lancerpick_ci` 격리 DB), 토스는 테스트 대역. 포트폴리오 사례 표에 "후속 검증"으로 남아 있던 항목을 통합 테스트로 확인했다.
+황준범, 기준 main `782508f`(`4a3932d` 결제 쿼리 정리 포함). 환경: Linux 컨테이너, Temurin JDK 25.0.5.1+2, Docker MySQL 8.4(CI와 같은 `lancerpick_ci` 격리 DB), 토스는 테스트 대역. 포트폴리오 사례 표에 "후속 검증"으로 남아 있던 항목을 통합 테스트로 확인했다.
 
-**사전 확인(CI 동등 실행).** `782508f`에서 `./gradlew clean build`(백엔드 1,153건, 측정용 2건 skip, 실패 0)와 프런트 `typecheck`·`lint`·`test:api`·`build`가 통과했다. 원격 Actions 결과는 이번에 조회하지 못했으므로 원격 CI 통과로 적지 않는다. `4a3932d`는 후보 `7324f96` 이후 main에 들어온 코드 변경이라, 발표 후보는 다시 정하고 결제·주문 상세 영향 화면을 실서버에서 확인해야 한다([발표 후보 확인](#presentation-candidate-check)과 같은 절차).
+**사전 확인(CI 동등 실행).** `782508f`에서 `./gradlew clean build`(백엔드 1,153건, 측정용 2건 skip, 실패 0)와 프런트 `typecheck`·`lint`·`test:api`·`build`가 통과했다. 원격 Actions 결과는 이번에 조회하지 못했으므로 원격 CI 통과로 적지 않는다.
 
 | 검증 | 조건 | 결과 | 근거 |
 | --- | --- | --- | --- |
