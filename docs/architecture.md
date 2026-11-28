@@ -35,6 +35,8 @@ PDF는 생성 시도 키·문서 버전·해시·짧은 DB 트랜잭션·비공�
 
 현재 main은 #152로 V3 신규 생성 기본값을 true로 변경했다. V2는 false이며 test 프로필은 기존 LEGACY_V1 회귀를 위해 V3를 false로 고정한다. 기존 주문의 policy_version은 바꾸지 않는다. MAIL_ENABLED=false, Batch 시작 시 자동 실행 금지, TOPUP_RECOVERY_ENABLED=false·TOPUP_RECOVERY_SCHEDULING_ENABLED=false다. Toss 일반 실행은 TOSS_TOPUP_ENABLED 기본 true이며 개인 테스트 시크릿이 필요하고, test 프로필은 외부 충전을 비활성화한다. 실제 개인 설정 값은 이번 정리에서 읽거나 변경하지 않았다.
 
+행 잠금 대기 한도는 `DB_LOCK_WAIT_TIMEOUT_SECONDS`(기본 5초)다. Hikari `connection-init-sql`이 커넥션마다 `innodb_lock_wait_timeout`을 설정해 MySQL 기본 50초를 대신한다. 한도 초과·교착으로 명령이 롤백되면 API는 409 `RESOURCE_BUSY`와 `Retry-After: 1`로 응답한다(2026-11-28, [검증](change-history.md#lock-wait-resource-busy)).
+
 보안 잠금 전달 재시도 로컬 후속은 `SECURITY_LOCK_RETRY_ENABLED=true`(기본), `SECURITY_LOCK_RETRY_DELAY_MS=30000`, `SECURITY_LOCK_RETRY_BATCH_SIZE=50`이다. 전용 스케줄러로 기존 전달 서비스를 호출하며 공통 test 프로필과 demo는 자동 실행하지 않는다. [재시도 계약·제한](features.md#members-sanctions)을 따른다. 신규 테이블이나 Batch Job은 추가하지 않는다.
 
 아래에는 현재 저장소의 실행·개발 환경을 정리했다. 초기 프로젝트 생성 예시는 변경 이력으로 분리했다. [루트 실행 안내](../README.md)와 실제 빌드·설정 파일을 함께 확인하고, 테스트는 TEST_DB_*로 격리한다. SMTP 메모리 큐 유실 등 한계는 [남은 작업](project-progress.md#remaining)에 유지한다. 오래된 PENDING의 UNKNOWN 정리(#166)는 아래 메일 인프라와 기능 명세를 따른다.
@@ -234,6 +236,7 @@ AdminProductSummary: id,title,priceAmount,durationDays,category(id,name),seller(
 | 403 / 404 | FORBIDDEN, CSRF_INVALID, MEMBER_RESTRICTED(주문 생성·판매자 수락, U7) / RESOURCE_NOT_FOUND |
 | 409 | EMAIL_ALREADY_EXISTS, PRODUCT_VERSION_CONFLICT, PRODUCT_NOT_ORDERABLE, SELF_PURCHASE_NOT_ALLOWED, CONTRACT_MINIMUM_AMOUNT_NOT_MET(V2·V3 계약 주문 생성 시 10,000원 미만) |
 | 409 | ORDER_STATE_CONFLICT, INSUFFICIENT_BALANCE, IDEMPOTENCY_KEY_REUSED |
+| 409 | RESOURCE_BUSY(행 잠금 대기 한도 초과·교착. 명령 전체 롤백, `Retry-After: 1`, 같은 요청 재시도 가능) |
 | 409 | CANCELLATION_PENDING, REQUEST_ALREADY_RESOLVED, REVISION_ALREADY_USED, REVIEW_ALREADY_EXISTS, PAYMENT_ALREADY_REFUNDED, DELIVERY_ALREADY_SUBMITTED, DELIVERY_SEQUENCE_CONFLICT |
 | 405 / 406 / 415 | METHOD_NOT_ALLOWED(`Allow` 헤더 포함) / NOT_ACCEPTABLE / UNSUPPORTED_MEDIA_TYPE |
 | 500 | INTERNAL_ERROR, DATA_INTEGRITY_ERROR |
