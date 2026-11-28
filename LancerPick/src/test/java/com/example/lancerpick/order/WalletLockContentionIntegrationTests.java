@@ -327,21 +327,28 @@ class WalletLockContentionIntegrationTests {
   }
 
   @Test
-  void walletLockTimeoutOverHttpIsCurrentlyAnUnclassifiedServerError() throws Exception {
+  void walletLockTimeoutOverHttpIsRetryableConflictAndRetrySucceeds() throws Exception {
     long order = signedOrder(buyer);
     try (var holder = new WalletHolder(buyer)) {
-      // 현재 ApiExceptionHandler에는 잠금 대기 초과 처리기가 없어 일반 500으로 응답한다.
-      // 재시도 가능 여부를 알려 주는 코드로 바꿀 때 이 기대값을 함께 바꾼다.
-      mvc.perform(
-              post("/api/orders/" + order + "/payment")
-                  .with(authentication(auth(buyer)))
-                  .with(csrf())
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .content("{\"agreedToTerms\":true}"))
-          .andExpect(status().isInternalServerError())
-          .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+      // 잠금 대기 초과는 전체 롤백된 충돌이므로 5xx(결과 불명)가 아니라 재시도 가능한 409로 응답한다.
+      mvc.perform(pay(order))
+          .andExpect(status().isConflict())
+          .andExpect(header().string("Retry-After", "1"))
+          .andExpect(jsonPath("$.code").value("RESOURCE_BUSY"));
       assertUnpaid(order, buyer);
     }
+    mvc.perform(pay(order))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+    assertPaidOnce(order, buyer);
+  }
+
+  org.springframework.test.web.servlet.RequestBuilder pay(long order) {
+    return post("/api/orders/" + order + "/payment")
+        .with(authentication(auth(buyer)))
+        .with(csrf())
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{\"agreedToTerms\":true}");
   }
 
   @Test
