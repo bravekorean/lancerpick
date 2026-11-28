@@ -1981,7 +1981,7 @@ Batch `scanRequestedAt`은 허용된 `requestedAtMillis` 파라미터를 UTC로 
 Job 파라미터는 `run.id`(UUID)와 `requestedAtMillis`(0 이상, UTC 9999년 이내 epoch 밀리초) 두 개만 허용한다. 규칙은 `wallet/batch/TopupRecoveryJobParameters` 하나에 있고 Job 검증기(시작과 저장된 파라미터로 재시작할 때 모두 적용, 재시작 실패는 `JobRestartException`)와 관리자 재시작 판단(`INVALID_JOB_PARAMETERS`)이 같이 쓴다. Step 컨텍스트에는 `highestId`·`lastId`와 `completed`·`failed`·`deferred`·`exhausted`·`stale` 집계만 업무 값으로 저장한다. 프레임워크의 기본 체크포인트 항목도 함께 저장된다. 결제 키·처리권 토큰·외부 응답 원문은 저장하지 않는다. 업무 예외는 고정 오류 코드로 바꿔 Batch 실패 메타데이터에 제공자 원문이 들어가지 않도록 한다.
 
 | `TopupRecoveryJobService.snapshot(executionId)` | 관리자 재검사 시점의 Job·Step 실행 버전 |
-| `TopupRecoveryJobService.recoverInterrupted(executionId, snapshot)` | 메타데이터를 다시 읽어 버전이 snapshot과 같고 중단 판단이 맞는지 확인 → Job·Step 행 조건부 VERSION 증가(펜스) → 바깥 트랜잭션 안에서 `JobOperator.recover`로 FAILED 정리. 조건이 맞지 않으면 바꾸지 않고 `JobRestartException`. 재시작은 하지 않음 |
+| `TopupRecoveryJobService.recoverInterrupted(executionId, snapshot)` | 메타데이터를 다시 읽어 버전이 snapshot과 같고 중단 판단이 맞는지 확인 → Job 행과 실행 중 Step 행 조건부 VERSION 증가, 끝난 Step은 버전·상태 불변 확인(펜스) → 바깥 트랜잭션 안에서 `JobOperator.recover`로 FAILED 정리. 조건이 맞지 않으면 바꾸지 않고 `JobRestartException`. 재시작은 하지 않음 |
 
 프로세스 강제 종료로 메타데이터가 `STARTED`에 남으면 바로 `restart`할 수 없다. 새 Job 실행은 만료된 처리권을 다시 확보해 업무 복구를 계속할 수 있다. 예전 실행 이력은 운영자가 작업자 종료를 확인한 뒤 관리자 정리 명령(`POST /api/admin/finance/recovery-jobs/{executionId}/recover-restart`, 감사 명령 `TOPUP_RECOVERY_RECOVER_RESTART`)으로 FAILED 정리 후 같은 JobInstance로 재시작한다(2026-11-28, [변경 기록](change-history.md#topup-recovery-interrupted-recover)). 자동 정리는 하지 않는다.
 

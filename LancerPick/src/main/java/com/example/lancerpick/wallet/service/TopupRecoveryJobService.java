@@ -83,10 +83,17 @@ public class TopupRecoveryJobService {
     return operator.restart(load(executionId));
   }
 
-  /** 정리 판단에 쓴 시점의 Job·Step 실행 버전. 이후 한 번이라도 갱신되면 값이 달라진다. */
-  public record Snapshot(long jobVersion, Map<Long, Long> stepVersions) {
+  /** 정리 판단에 쓴 시점의 Job 실행 버전과 Step 실행별 버전·상태. 이후 한 번이라도 갱신되면 값이 달라진다. */
+  public record Snapshot(long jobVersion, Map<Long, StepState> steps) {
     public Snapshot {
-      stepVersions = Map.copyOf(stepVersions);
+      steps = Map.copyOf(steps);
+    }
+  }
+
+  /** Step 실행의 버전과 Batch 상태 이름. */
+  public record StepState(long version, String status) {
+    boolean running() {
+      return RUNNING.contains(status);
     }
   }
 
@@ -100,8 +107,10 @@ public class TopupRecoveryJobService {
    * 프로세스 종료로 실행 중 상태에 남은 실행을 Spring Batch {@code JobOperator.recover}로 FAILED 정리한다. 재시작은 하지 않는다.
    *
    * <p>순서: (1) 메타데이터를 다시 읽어 버전이 관리자 재검사 때의 {@code expected}와 같고 {@link TopupRecoveryInterruption} 규칙상 중단인지
-   * 확인한다. (2) 짧은 트랜잭션에서 Job·Step 실행 행의 VERSION을 "기대 버전이고 아직 실행 중 상태일 때만" 1 올린다(펜스). 한 행이라도 맞지 않으면
-   * 롤백하고 거절한다. (3) 펜스가 커밋된 뒤에만 recover한다.
+   * 확인한다. (2) 짧은 트랜잭션에서 Job 실행 행과 실행 중 상태인 Step 실행 행의 VERSION을 "기대 버전이고 아직 실행 중 상태일 때만" 1
+   * 올린다(펜스). 이미 끝난 Step(COMPLETED 등)은 recover가 바꾸지 않으므로 버전을 올리지 않고, 버전·상태가 그대로인지만 확인한다. 한 행이라도
+   * 맞지 않으면 롤백하고 거절한다. (3) 펜스가 커밋된 뒤에만 recover한다. 중단 판단은 Step 상태를 보지 않으므로, Step이 모두 끝난 직후 종료돼
+   * Job만 STARTED로 남은 실행도 판단과 펜스가 같은 결론을 낸다.
    *
    * <p>펜스가 필요한 이유: Spring Batch의 {@code JobRepository.update(JobExecution)}·recover는 저장 전에 DB의 최신 버전을 읽어 맞추므로
    * 버전 검사만으로는 그 사이의 갱신을 막지 못한다(Codex 재현). 반면 Step 실행 저장은 메모리의 버전을 조건으로 쓰므로, 펜스 뒤에 살아 있던 작업자가
@@ -143,19 +152,35 @@ public class TopupRecoveryJobService {
                 Long.class)
             .setParameter("job", executionId)
             .getSingleResult();
-    boolean fenced = steps == expected.stepVersions().size();
-    for (var step : expected.stepVersions().entrySet()) {
-      fenced &=
-          entities
-                  .createQuery(
-                      "UPDATE BatchStepExecutionFence s SET s.version = s.version + 1 WHERE s.id = :id"
-                          + " AND s.jobExecutionId = :job AND s.version = :version AND s.status IN :running")
-                  .setParameter("id", step.getKey())
-                  .setParameter("job", executionId)
-                  .setParameter("version", step.getValue())
-                  .setParameter("running", RUNNING)
-                  .executeUpdate()
-              == 1;
+    boolean fenced = steps == expected.steps().size();
+    for (var step : expected.steps().entrySet()) {
+      var state = step.getValue();
+      if (state.running()) {
+        fenced &=
+            entities
+                    .createQuery(
+                        "UPDATE BatchStepExecutionFence s SET s.version = s.version + 1 WHERE s.id = :id"
+                            + " AND s.jobExecutionId = :job AND s.version = :version AND s.status IN :running")
+                    .setParameter("id", step.getKey())
+                    .setParameter("job", executionId)
+                    .setParameter("version", state.version())
+                    .setParameter("running", RUNNING)
+                    .executeUpdate()
+                == 1;
+      } else {
+        fenced &=
+            entities
+                    .createQuery(
+                        "SELECT COUNT(s) FROM BatchStepExecutionFence s WHERE s.id = :id"
+                            + " AND s.jobExecutionId = :job AND s.version = :version AND s.status = :status",
+                        Long.class)
+                    .setParameter("id", step.getKey())
+                    .setParameter("job", executionId)
+                    .setParameter("version", state.version())
+                    .setParameter("status", state.status())
+                    .getSingleResult()
+                == 1;
+      }
     }
     fenced &=
         entities
@@ -172,9 +197,9 @@ public class TopupRecoveryJobService {
   }
 
   private static Snapshot snapshotOf(JobExecution execution) {
-    var steps = new TreeMap<Long, Long>();
+    var steps = new TreeMap<Long, StepState>();
     for (var step : execution.getStepExecutions()) {
-      steps.put(step.getId(), versionOf(step.getVersion()));
+      steps.put(step.getId(), new StepState(versionOf(step.getVersion()), step.getStatus().name()));
     }
     return new Snapshot(versionOf(execution.getVersion()), steps);
   }

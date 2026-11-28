@@ -453,8 +453,36 @@ class AdminReprocessingIntegrationTests {
             BusinessException.class, e -> assertThat(e.code()).isEqualTo("ADMIN_ACTION_NOT_ELIGIBLE"));
   }
 
-  /** 프로세스가 체크포인트 저장 전에 종료돼 실행·단계가 STARTED로 남고, 마지막 갱신이 silentFor 전인 실행. */
+  @Test
+  void jobLeftStartedAfterItsStepCompletedIsRecoveredWithoutTouchingTheCompletedStep() {
+    // Step을 COMPLETED로 저장한 직후, Job 종료 저장 전에 프로세스가 죽은 경우.
+    var crashed = interruptedJob(Duration.ofHours(1), BatchStatus.COMPLETED);
+    var step = crashed.getStepExecutions().iterator().next();
+    assertThat(step.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+    assertThat(crashed.getStatus()).isEqualTo(BatchStatus.STARTED);
+    assertThat(finance.recoveryJob(admin, crashed.getId()).recoverRestart().eligible()).isTrue();
+
+    var result =
+        service.recoverAndRestartTopupRecovery(admin, crashed.getId(), "Step 완료 후 종료", UUID.randomUUID());
+
+    assertThat(result.receipt().status()).isEqualTo(AdminActionStatus.SUCCEEDED);
+    assertThat(result.receipt().resultCode()).isEqualTo("BATCH_RECOVER_RESTART_ACCEPTED");
+    var original = jobs.getJobExecution(crashed.getId());
+    assertThat(original.getStatus()).isEqualTo(BatchStatus.FAILED);
+    var after = original.getStepExecutions().iterator().next();
+    assertThat(after.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+    assertThat(after.getVersion()).isEqualTo(step.getVersion());
+    var latest = jobs.getLastJobExecution(crashed.getJobInstance());
+    assertThat(latest.getId()).isNotEqualTo(crashed.getId());
+    assertThat(latest.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+  }
+
   org.springframework.batch.core.job.JobExecution interruptedJob(Duration silentFor) {
+    return interruptedJob(silentFor, BatchStatus.STARTED);
+  }
+
+  /** 프로세스가 Job 종료 저장 전에 죽어 Job이 STARTED로 남고, 마지막 갱신이 silentFor 전인 실행. Step은 stepStatus로 남는다. */
+  org.springframework.batch.core.job.JobExecution interruptedJob(Duration silentFor, BatchStatus stepStatus) {
     var params =
         new JobParametersBuilder()
             .addString("run.id", UUID.randomUUID().toString())
@@ -467,8 +495,12 @@ class AdminReprocessingIntegrationTests {
     execution.setStartTime(LocalDateTime.now());
     jobs.update(execution);
     var step = jobs.createStepExecution("walletTopupRecoveryStep", execution);
-    step.setStatus(BatchStatus.STARTED);
+    step.setStatus(stepStatus);
     step.setStartTime(LocalDateTime.now());
+    if (!stepStatus.isRunning()) {
+      step.setEndTime(LocalDateTime.now());
+      step.setExitStatus(new org.springframework.batch.core.ExitStatus(stepStatus.name()));
+    }
     jobs.update(step);
     // Batch와 같이 Timestamp(순간)로 저장한다. 갱신이 멈춘 시점을 과거로 옮긴다.
     var at = java.sql.Timestamp.from(Instant.now().minus(silentFor));
